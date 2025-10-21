@@ -1,7 +1,7 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.3.0
-# Zweck:   Einheitliche Menüführung mit Rückkehrfunktion + Logging + Menüstack + Untermenü-Erkennung
+# Version: LIB_V1.4.0
+# Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
 # ============================================================
@@ -11,6 +11,15 @@
 # ------------------------------------------------------------
 if (-not $global:MenuStack) { $global:MenuStack = @() }
 $global:MenuLogPath = "$PSScriptRoot\..\..\04_Logs\System_Log.txt"
+
+# ------------------------------------------------------------
+# 🧭 Sitzungsstart markieren (nur einmal pro Lauf)
+# ------------------------------------------------------------
+if (-not $global:MenuSessionStarted) {
+    $sessionHeader = "────────────────────────────────────────────`n[{0}] 🧭 Neue Menü-Session gestartet`n────────────────────────────────────────────" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    Add-Content -Path $global:MenuLogPath -Value $sessionHeader
+    $global:MenuSessionStarted = $true
+}
 
 # ------------------------------------------------------------
 # 🧩 Hilfsfunktionen: Logging & Stack
@@ -92,7 +101,9 @@ function Show-SubMenu {
         Write-Host "============================================="
         Write-Host ("        " + ($MenuTitle -replace '^\s+', ''))
         Write-Host "============================================="
-        Write-Host "Pfad: $menuPath" -ForegroundColor DarkGray
+        if ($menuPath -ne "[ROOT]") {
+            Write-Host ("📂 Pfad: " + $menuPath) -ForegroundColor DarkGray
+        }
         if ($debugMode) { Write-Host "🪲 DEBUG-MODE AKTIVIERT`n" -ForegroundColor DarkYellow }
 
         foreach ($key in ($Options.Keys | Sort-Object {
@@ -129,32 +140,29 @@ function Show-SubMenu {
             if ($debugMode) { Write-Host "→ Ausführung: $action" -ForegroundColor DarkGray }
 
             # ------------------------------------------------------------
-# 🔍 Erweiterung: verschachtelte Menüs automatisch erkennen
-# ------------------------------------------------------------
-if ($action -match '^Show-SubMenu') {
-    try {
-        # Original-Optionseintrag abrufen
-        $entry = $Options[$choice]
-        $parts = $entry.Split('|')
-        $menuTitleMatch = [regex]::Match($parts[1], "-MenuTitle\s+'([^']+)'")
+            # 🔍 Erweiterung: verschachtelte Menüs automatisch erkennen
+            # ------------------------------------------------------------
+            if ($action -match '^Show-SubMenu') {
+                try {
+                    $entry = $Options[$choice]
+                    $parts = $entry.Split('|')
+                    $menuTitleMatch = [regex]::Match($parts[1], "-MenuTitle\s+'([^']+)'")
 
-        if ($menuTitleMatch.Success) {
-            $subTitle = $menuTitleMatch.Groups[1].Value
-            # Suche nach der ersten bekannten Menüvariable (z. B. $optionsSub)
-            $realOptions = Get-Variable | Where-Object { $_.Value -is [hashtable] -and $_.Name -like 'options*' } | Select-Object -First 1
+                    if ($menuTitleMatch.Success) {
+                        $subTitle = $menuTitleMatch.Groups[1].Value
+                        $realOptions = Get-Variable | Where-Object { $_.Value -is [hashtable] -and $_.Name -like 'options*' } | Select-Object -First 1
 
-            if ($null -ne $realOptions) {
-                & (Get-Command Show-SubMenu) -MenuTitle $subTitle -Options $realOptions.Value
-                Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Untermenü geöffnet: $($realOptions.Name)"
-                continue
+                        if ($null -ne $realOptions) {
+                            & (Get-Command Show-SubMenu) -MenuTitle $subTitle -Options $realOptions.Value
+                            Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Untermenü geöffnet: $($realOptions.Name)"
+                            continue
+                        }
+                    }
+                }
+                catch {
+                    Write-Host "⚠️ Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
+                }
             }
-        }
-    }
-    catch {
-        Write-Host "⚠️ Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
-    }
-}
-
 
             # ------------------------------------------------------------
             # Standardaktion ausführen
