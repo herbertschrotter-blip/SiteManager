@@ -1,10 +1,18 @@
 # ============================================================
 # Library: Lib_Menu.ps1
 # Version: LIB_V1.5.1
-# Zweck:   Menüführung mit Rückkehrfunktion, Logging, Menüstack & Konfigurationssteuerung (ohne Debug-System)
+# Zweck:   Menüsystem mit Navigation, Logging, Stack-Verwaltung & konfigurierbarer Parameterdatei
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
 # ============================================================
+# ManifestHint:
+#   ExportFunctions: Show-SubMenu, Write-MenuLog, Push-MenuStack, Pop-MenuStack, Get-CurrentMenuPath
+#   Description: Zentrale Menüsteuerung des Site Managers mit Logging, Rückkehrfunktion und Pfadanzeige.
+#   Category: Core
+#   Tags: Menu, Logging, Framework, SiteManager
+#   Dependencies: (none)
+# ============================================================
+
 
 # ------------------------------------------------------------
 # Parameterdatei prüfen oder neu anlegen
