@@ -1,6 +1,6 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.4.4
+# Version: LIB_V1.4.5
 # Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
@@ -113,7 +113,7 @@ function Show-SubMenu {
             Write-Host "$key - $($Options[$key].Split('|')[0])"
         }
 
-        Write-Host "`n0 - Zurück zum vorherigen Menü"
+        Write-Host "`nB - Zurück zum vorherigen Menü"
         Write-Host "X - Komplett beenden"
         Write-Host ""
 
@@ -128,10 +128,10 @@ function Show-SubMenu {
             exit
         }
 
-        # Zurück
-        if ($choice -eq "0" -or $choice -eq "z") {
+        # Zurück (B)
+        if ($choice -match '^(b|B)$') {
             Pop-MenuStack
-            Write-MenuLog -MenuTitle $MenuTitle -Selection "0" -Action "Zurück"
+            Write-MenuLog -MenuTitle $MenuTitle -Selection "B" -Action "Zurück"
             return "0"
         }
 
@@ -153,7 +153,7 @@ function Show-SubMenu {
 
                         if ($null -ne $realOptions) {
                             & (Get-Command Show-SubMenu) -MenuTitle $subTitle -Options $realOptions.Value
-                            Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Untermenü geöffnet: $($realOptions.Name)"
+                            Write-MenuLog -MenuTitle $MenuTitle -Selection "B" -Action "Untermenü geöffnet: $($realOptions.Name)"
                             continue
                         }
                     }
