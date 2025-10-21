@@ -129,26 +129,32 @@ function Show-SubMenu {
             if ($debugMode) { Write-Host "→ Ausführung: $action" -ForegroundColor DarkGray }
 
             # ------------------------------------------------------------
-            # 🔍 Erweiterung: verschachtelte Menüs automatisch erkennen
-            # ------------------------------------------------------------
-            if ($action -match '^Show-SubMenu\s') {
-                try {
-                    $parts = $action -split '\s+-Options\s+', 2
-                    if ($parts.Count -eq 2) {
-                        $menuCmd  = $parts[0]
-                        $optionsRef = $parts[1]
-                        $realOptions = (Get-Variable -Name ($optionsRef -replace '^\$','') -ErrorAction SilentlyContinue).Value
-                        if ($null -ne $realOptions) {
-                            & (Get-Command Show-SubMenu) -MenuTitle ($menuCmd -replace "Show-SubMenu -MenuTitle '([^']*)'.*",'$1') -Options $realOptions
-                            Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Untermenü geöffnet: $optionsRef"
-                            continue
-                        }
-                    }
-                }
-                catch {
-                    Write-Host "⚠️ Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
-                }
+# 🔍 Erweiterung: verschachtelte Menüs automatisch erkennen
+# ------------------------------------------------------------
+if ($action -match '^Show-SubMenu') {
+    try {
+        # Original-Optionseintrag abrufen
+        $entry = $Options[$choice]
+        $parts = $entry.Split('|')
+        $menuTitleMatch = [regex]::Match($parts[1], "-MenuTitle\s+'([^']+)'")
+
+        if ($menuTitleMatch.Success) {
+            $subTitle = $menuTitleMatch.Groups[1].Value
+            # Suche nach der ersten bekannten Menüvariable (z. B. $optionsSub)
+            $realOptions = Get-Variable | Where-Object { $_.Value -is [hashtable] -and $_.Name -like 'options*' } | Select-Object -First 1
+
+            if ($null -ne $realOptions) {
+                & (Get-Command Show-SubMenu) -MenuTitle $subTitle -Options $realOptions.Value
+                Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Untermenü geöffnet: $($realOptions.Name)"
+                continue
             }
+        }
+    }
+    catch {
+        Write-Host "⚠️ Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
 
             # ------------------------------------------------------------
             # Standardaktion ausführen
