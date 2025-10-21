@@ -1,31 +1,103 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.4.6
-# Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
+# Version: LIB_V1.5.0
+# Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung (parametergesteuert)
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
 # ============================================================
 
 # ------------------------------------------------------------
-# Globale Variablen & Log-Rotation
+# Parameterdatei prüfen oder neu anlegen
+# ------------------------------------------------------------
+$configPath = "$PSScriptRoot\..\..\01_Config\Menu_Config.json"
+if (-not (Test-Path $configPath)) {
+    Write-Host "Parameterdatei nicht gefunden. Erstelle Standard-Konfiguration ..." -ForegroundColor Yellow
+
+    $defaultConfig = @{
+        Version = "CFG_V1.0.0"
+        Menu    = @{
+            ShowPath          = $false
+            DebugDefault      = $false
+            MaxLogFiles       = 10
+            LogFilePrefix     = "Menu_Log_"
+            LogDateFormat     = "yyyy-MM-dd_HHmm"
+            LogRetentionDays  = 30
+            ColorScheme       = @{
+                Title     = "White"
+                Highlight = "Cyan"
+                Error     = "Red"
+                Debug     = "DarkYellow"
+            }
+        }
+    }
+
+    $json = $defaultConfig | ConvertTo-Json -Depth 4
+    $configDir = Split-Path $configPath
+    if (-not (Test-Path $configDir)) { New-Item -Path $configDir -ItemType Directory | Out-Null }
+    $json | Out-File -FilePath $configPath -Encoding UTF8
+
+    Write-Host "Standard-Konfiguration erstellt unter: $configPath" -ForegroundColor Green
+}
+
+# ------------------------------------------------------------
+# Parameterdatei laden
+# ------------------------------------------------------------
+try {
+    $config = Get-Content $configPath -Raw | ConvertFrom-Json
+    $menuConfig = $config.Menu
+}
+catch {
+    Write-Host "Fehler beim Laden der Menu_Config.json: $($_.Exception.Message)" -ForegroundColor Red
+    $menuConfig = @{}
+}
+
+# Standardwerte (Fallback bei fehlenden Parametern)
+if (-not $menuConfig.MaxLogFiles) { $menuConfig.MaxLogFiles = 10 }
+if (-not $menuConfig.ShowPath) { $menuConfig.ShowPath = $false }
+if (-not $menuConfig.LogFilePrefix) { $menuConfig.LogFilePrefix = "Menu_Log_" }
+if (-not $menuConfig.LogDateFormat) { $menuConfig.LogDateFormat = "yyyy-MM-dd_HHmm" }
+if (-not $menuConfig.LogRetentionDays) { $menuConfig.LogRetentionDays = 30 }
+if (-not $menuConfig.ColorScheme) {
+    $menuConfig.ColorScheme = @{
+        Title     = "White"
+        Highlight = "Cyan"
+        Error     = "Red"
+        Debug     = "DarkYellow"
+    }
+}
+
+# ------------------------------------------------------------
+# Log-Initialisierung (mit Parametern aus Config)
 # ------------------------------------------------------------
 $logDir = "$PSScriptRoot\..\..\04_Logs"
 if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
 
-# Neue Logdatei pro Sitzung mit Zeitstempel
-$timestamp = (Get-Date).ToString("yyyy-MM-dd_HHmm")
-$global:MenuLogPath = Join-Path $logDir "Menu_Log_$timestamp.txt"
+$timestamp = (Get-Date).ToString($menuConfig.LogDateFormat)
+$global:MenuLogPath = Join-Path $logDir ("{0}{1}.txt" -f $menuConfig.LogFilePrefix, $timestamp)
 
-# Alte Logs bereinigen (max. 10 behalten)
-$logFiles = Get-ChildItem -Path $logDir -Filter "Menu_Log_*.txt" | Sort-Object LastWriteTime -Descending
-if ($logFiles.Count -gt 10) {
-    $oldLogs = $logFiles | Select-Object -Skip 10
+# Alte Logs bereinigen (max. Anzahl oder Alter)
+$logFiles = Get-ChildItem -Path $logDir -Filter "$($menuConfig.LogFilePrefix)*.txt" | Sort-Object LastWriteTime -Descending
+
+# Nur die letzten N behalten
+if ($logFiles.Count -gt $menuConfig.MaxLogFiles) {
+    $oldLogs = $logFiles | Select-Object -Skip $menuConfig.MaxLogFiles
     foreach ($log in $oldLogs) {
         try { Remove-Item $log.FullName -Force } catch {}
     }
 }
 
+# Optional: Alte Logs nach Tagen löschen
+if ($menuConfig.LogRetentionDays -gt 0) {
+    $cutoff = (Get-Date).AddDays(-$menuConfig.LogRetentionDays)
+    $expired = $logFiles | Where-Object { $_.LastWriteTime -lt $cutoff }
+    foreach ($log in $expired) {
+        try { Remove-Item $log.FullName -Force } catch {}
+    }
+}
+
+# ------------------------------------------------------------
 # Menüstack initialisieren
+# ------------------------------------------------------------
 if (-not $global:MenuStack) { $global:MenuStack = @() }
 
 # ------------------------------------------------------------
@@ -36,16 +108,6 @@ if (-not $global:MenuSessionStarted) {
     $sessionHeader = "--------------------------------------------`n[{0}] Neue Menü-Session gestartet`n--------------------------------------------" -f $timestamp
     Add-Content -Path $global:MenuLogPath -Value $sessionHeader
     $global:MenuSessionStarted = $true
-}
-
-# ------------------------------------------------------------
-# Menüstack beim Start der Session zurücksetzen
-# ------------------------------------------------------------
-if ($global:MenuStack.Count -gt 0) {
-    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $logText = "[{0}] Menüstack zurückgesetzt (neue Sitzung)" -f $timestamp
-    Add-Content -Path $global:MenuLogPath -Value $logText
-    $global:MenuStack = @()
 }
 
 # ------------------------------------------------------------
@@ -65,7 +127,7 @@ function Write-MenuLog {
         Add-Content -Path $global:MenuLogPath -Value $logEntry
     }
     catch {
-        Write-Host "Fehler beim Schreiben des Menülogs: $($_.Exception.Message)" -ForegroundColor DarkRed
+        Write-Host "Fehler beim Schreiben des Menülogs: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
@@ -103,32 +165,32 @@ function Show-SubMenu {
         . "$PSScriptRoot\Lib_Systeminfo.ps1"
         $debugMode = Get-DebugMode
     }
-    catch { $debugMode = $false }
+    catch { $debugMode = $menuConfig.DebugDefault }
 
     # Hauptmenü-Schleife
     while ($true) {
         Clear-Host
         $menuPath = Get-CurrentMenuPath
 
-        Write-Host "============================================="
-        Write-Host ("        " + ($MenuTitle -replace '^\s+', ''))
-        Write-Host "============================================="
+        Write-Host "=============================================" -ForegroundColor $menuConfig.ColorScheme.Title
+        Write-Host ("        " + ($MenuTitle -replace '^\s+', '')) -ForegroundColor $menuConfig.ColorScheme.Title
+        Write-Host "=============================================" -ForegroundColor $menuConfig.ColorScheme.Title
 
-        # Pfadanzeige deaktiviert (optional aktivierbar)
-        # if ($menuPath -ne "[ROOT]") {
-        #     Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
-        # }
+        # Pfadanzeige optional
+        if ($menuConfig.ShowPath -and $menuPath -ne "[ROOT]") {
+            Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
+        }
 
-        if ($debugMode) { Write-Host "DEBUG-MODE AKTIVIERT`n" -ForegroundColor DarkYellow }
+        if ($debugMode) { Write-Host "DEBUG-MODE AKTIVIERT`n" -ForegroundColor $menuConfig.ColorScheme.Debug }
 
         foreach ($key in ($Options.Keys | Sort-Object {
             if ($_ -match '^\d+$') { [int]$_ } else { $_ }
         })) {
-            Write-Host "$key - $($Options[$key].Split('|')[0])"
+            Write-Host "$key - $($Options[$key].Split('|')[0])" -ForegroundColor $menuConfig.ColorScheme.Highlight
         }
 
-        Write-Host "`nB - Zurück zum vorherigen Menü"
-        Write-Host "X - Komplett beenden"
+        Write-Host "`nB - Zurück zum vorherigen Menü" -ForegroundColor $menuConfig.ColorScheme.Title
+        Write-Host "X - Komplett beenden" -ForegroundColor $menuConfig.ColorScheme.Title
         Write-Host ""
 
         $choice = Read-Host "Bitte Auswahl eingeben"
@@ -152,38 +214,14 @@ function Show-SubMenu {
         # Auswahl ausführen
         if ($Options.ContainsKey($choice)) {
             $action = $Options[$choice].Split('|')[1]
-            if ($debugMode) { Write-Host "Ausführung: $action" -ForegroundColor DarkGray }
+            if ($debugMode) { Write-Host "Ausführung: $action" -ForegroundColor $menuConfig.ColorScheme.Debug }
 
-            # Verschachtelte Menüs automatisch erkennen
-            if ($action -match '^Show-SubMenu') {
-                try {
-                    $entry = $Options[$choice]
-                    $parts = $entry.Split('|')
-                    $menuTitleMatch = [regex]::Match($parts[1], "-MenuTitle\s+'([^']+)'")
-
-                    if ($menuTitleMatch.Success) {
-                        $subTitle = $menuTitleMatch.Groups[1].Value
-                        $realOptions = Get-Variable | Where-Object { $_.Value -is [hashtable] -and $_.Name -like 'options*' } | Select-Object -First 1
-
-                        if ($null -ne $realOptions) {
-                            & (Get-Command Show-SubMenu) -MenuTitle $subTitle -Options $realOptions.Value
-                            Write-MenuLog -MenuTitle $MenuTitle -Selection "B" -Action "Untermenü geöffnet: $($realOptions.Name)"
-                            continue
-                        }
-                    }
-                }
-                catch {
-                    Write-Host "Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
-                }
-            }
-
-            # Standardaktion ausführen
             try {
                 Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action $action
                 Invoke-Expression $action
             }
             catch {
-                Write-Host "Fehler beim Ausführen von '$action': $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "Fehler beim Ausführen von '$action': $($_.Exception.Message)" -ForegroundColor $menuConfig.ColorScheme.Error
                 Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Fehler: $($_.Exception.Message)"
             }
 
@@ -194,7 +232,7 @@ function Show-SubMenu {
             }
         }
         else {
-            Write-Host "Ungültige Eingabe. Bitte erneut versuchen." -ForegroundColor Red
+            Write-Host "Ungültige Eingabe. Bitte erneut versuchen." -ForegroundColor $menuConfig.ColorScheme.Error
             Start-Sleep 1
         }
     }
