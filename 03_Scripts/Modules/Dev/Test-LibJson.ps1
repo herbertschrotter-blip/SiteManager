@@ -16,17 +16,24 @@
 # ------------------------------------------------------------
 # 🔧 Libraries laden
 # ------------------------------------------------------------
-$libJsonPath        = "$PSScriptRoot\..\..\Libs\Lib_Json.ps1"
 $libPathManagerPath = "$PSScriptRoot\..\..\Libs\Lib_PathManager.ps1"
+$libJsonPath        = "$PSScriptRoot\..\..\Libs\Lib_Json.ps1"
 
-if (-not (Test-Path $libJsonPath)) {
+if (Test-Path $libPathManagerPath) {
+    . $libPathManagerPath
+    $paths = Get-PathMap
+} else {
+    Write-Host "⚠️ PathManager nicht gefunden – arbeite mit relativen Pfaden." -ForegroundColor Yellow
+    $paths = $null
+}
+
+if (Test-Path $libJsonPath) {
+    . $libJsonPath
+} else {
     Write-Host "❌ Lib_Json.ps1 nicht gefunden unter: $libJsonPath" -ForegroundColor Red
     exit
 }
-if (-not (Test-Path $libPathManagerPath)) {
-    Write-Host "❌ Lib_PathManager.ps1 nicht gefunden unter: $libPathManagerPath" -ForegroundColor Red
-    exit
-}
+
 
 . $libPathManagerPath
 . $libJsonPath
@@ -75,12 +82,17 @@ function Test-LibJson {
     try {
         Pause-Step "Starte mit Test 1 – Datei erstellen & lesen"
         # 1️⃣ Test: Datei-Erstellung & Lesen
-        Save-JsonFile -Data @() -Path $testFile
+        $initData = @(@{ Init = "true"; Zeit = (Get-Date).ToString("HH:mm:ss") })
+        Save-JsonFile -Data $initData -Path $testFile
         $exists = Test-Path $testFile
         Show-Result "Datei erstellt" $exists
 
+        # ⏱️ kurze Wartezeit (OneDrive / Caching)
+        Start-Sleep -Milliseconds 500
+
         $data = Get-JsonFile -Path $testFile
-        Show-Result "Datei lesbar" ($data -is [array])
+        Show-Result "Datei lesbar" ($data -is [array] -and $data.Count -gt 0)
+
 
         Pause-Step "Test 2 – Eintrag hinzufügen"
         # 2️⃣ Test: Hinzufügen eines Eintrags
