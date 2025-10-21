@@ -1,15 +1,15 @@
 # ============================================================
 # Library: Lib_Json.ps1
-# Version: LIB_V1.1.0
-# Zweck:   Universelle JSON-Lese-, Schreib- und Erstellfunktionen
+# Version: LIB_V1.4.0
+# Zweck:   JSON-Funktionen mit automatischer Erstellung einer Standardkonfiguration
 # Autor:   Herbert Schrotter
-# Datum:   22.10.2025
+# Datum:   23.10.2025
 # ============================================================
 # ManifestHint:
 #   ExportFunctions: Get-JsonFile, Save-JsonFile, Add-JsonEntry, Update-JsonValue, Remove-JsonEntry
-#   Description: Universelle JSON-Bibliothek mit optionaler Integration des PathManagers für zentrale Pfade
+#   Description: JSON-Bibliothek mit konfigurierbarem Verhalten und automatischer Erstellung von Json_Config.json
 #   Category: Core
-#   Tags: JSON, Data, Config, Logging, Framework, PathManager
+#   Tags: JSON, Config, IO, PathManager, Logging, AutoCreate
 #   Dependencies: (optional) Lib_PathManager.ps1
 # ============================================================
 
@@ -21,21 +21,72 @@ try {
     if (Test-Path $pathManager) {
         . $pathManager
         $paths = Get-PathMap
+        $defaultConfigPath = Join-Path $paths.Config "Json_Config.json"
         $defaultLog = Join-Path $paths.Logs "Json_Log.txt"
-    }
-    else {
+    } else {
         $paths = $null
+        $defaultConfigPath = Join-Path $PSScriptRoot "Json_Config.json"
         $defaultLog = Join-Path $PSScriptRoot "Json_Log.txt"
     }
 }
 catch {
     $paths = $null
+    $defaultConfigPath = Join-Path $PSScriptRoot "Json_Config.json"
     $defaultLog = Join-Path $PSScriptRoot "Json_Log.txt"
 }
 
 # ------------------------------------------------------------
+# ⚙️ Standardwerte definieren
+# ------------------------------------------------------------
+$DefaultJsonConfig = @{
+    CreateIfMissing = $true
+    WaitTimeMs      = 200
+    WaitLoopMax     = 10
+    DefaultDepth    = 8
+    EnableLogging   = $false
+    LogFile         = $defaultLog
+}
+
+# ------------------------------------------------------------
+# 📘 Konfiguration laden oder neu erstellen
+# ------------------------------------------------------------
+$JsonConfig = @{}
+
+if (Test-Path $defaultConfigPath) {
+    try {
+        $userConfig = Get-Content -Path $defaultConfigPath -Raw | ConvertFrom-Json
+        foreach ($key in $DefaultJsonConfig.Keys) {
+            if ($userConfig.PSObject.Properties.Name -contains $key) {
+                $JsonConfig[$key] = $userConfig.$key
+            } else {
+                $JsonConfig[$key] = $DefaultJsonConfig[$key]
+            }
+        }
+        Write-Host "⚙️ JSON-Konfiguration geladen aus $defaultConfigPath" -ForegroundColor Gray
+    }
+    catch {
+        Write-Host "⚠️ Fehler beim Laden der Json_Config.json – Standardwerte werden verwendet." -ForegroundColor Yellow
+        $JsonConfig = $DefaultJsonConfig
+    }
+} 
+else {
+    Write-Host "⚠️ Keine Json_Config.json gefunden – Standarddatei wird erstellt." -ForegroundColor Yellow
+
+    # Ordner ggf. anlegen
+    $configDir = Split-Path $defaultConfigPath
+    if (-not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    }
+
+    # Standarddatei schreiben
+    $DefaultJsonConfig | ConvertTo-Json -Depth 4 | Out-File -FilePath $defaultConfigPath -Encoding utf8
+    $JsonConfig = $DefaultJsonConfig
+
+    Write-Host "✅ Standardkonfiguration erstellt unter: $defaultConfigPath" -ForegroundColor Green
+}
+
+# ------------------------------------------------------------
 # 📖 Funktion: Get-JsonFile
-# Zweck:   Liest eine JSON-Datei und gibt deren Inhalt als Objekt zurück.
 # ------------------------------------------------------------
 function Get-JsonFile {
     param(
@@ -45,10 +96,10 @@ function Get-JsonFile {
 
     try {
         if (-not (Test-Path $Path)) {
-            if ($CreateIfMissing) {
-                @() | ConvertTo-Json -Depth 4 | Set-Content -Path $Path -Encoding utf8
-            }
-            else {
+            if ($CreateIfMissing -or $JsonConfig.CreateIfMissing) {
+                @() | ConvertTo-Json -Depth $JsonConfig.DefaultDepth | Set-Content -Path $Path -Encoding utf8
+                Start-Sleep -Milliseconds $JsonConfig.WaitTimeMs
+            } else {
                 throw "Datei nicht gefunden: ${Path}"
             }
         }
@@ -67,7 +118,6 @@ function Get-JsonFile {
 
 # ------------------------------------------------------------
 # 💾 Funktion: Save-JsonFile
-# Zweck:   Speichert ein beliebiges Objekt als JSON-Datei.
 # ------------------------------------------------------------
 function Save-JsonFile {
     param(
@@ -82,8 +132,24 @@ function Save-JsonFile {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
         }
 
-        # Speichern mit UTF8 (ohne BOM)
-        $Data | ConvertTo-Json -Depth 8 | Set-Content -Path $Path -Encoding utf8
+        # Schreiben mit UTF8
+        $Data | ConvertTo-Json -Depth $JsonConfig.DefaultDepth | Out-File -FilePath $Path -Encoding utf8 -Force
+
+        # Warte-Loop aus Config
+        $maxWait = $JsonConfig.WaitLoopMax
+        while (-not (Test-Path $Path) -and $maxWait -gt 0) {
+            Start-Sleep -Milliseconds $JsonConfig.WaitTimeMs
+            $maxWait--
+        }
+
+        if (-not (Test-Path $Path)) {
+            throw "Datei konnte nicht erstellt werden: $Path"
+        }
+
+        if ($JsonConfig.EnableLogging) {
+            Add-Content -Path $JsonConfig.LogFile -Value ("[{0}] WRITE → {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Path)
+        }
+
     }
     catch {
         Write-Host "❌ Fehler beim Schreiben von ${Path}: $($_.Exception.Message)" -ForegroundColor Red
@@ -92,7 +158,6 @@ function Save-JsonFile {
 
 # ------------------------------------------------------------
 # ➕ Funktion: Add-JsonEntry
-# Zweck:   Fügt einen neuen Datensatz zu einer JSON-Datei hinzu.
 # ------------------------------------------------------------
 function Add-JsonEntry {
     param(
@@ -120,8 +185,6 @@ function Add-JsonEntry {
 
 # ------------------------------------------------------------
 # 🔄 Funktion: Update-JsonValue
-# Zweck:   Aktualisiert gezielt einen Wert in einer JSON-Datei.
-# Beispiel: Update-JsonValue -Path $p -Key "DebugMode" -Value $false
 # ------------------------------------------------------------
 function Update-JsonValue {
     param(
@@ -150,8 +213,6 @@ function Update-JsonValue {
 
 # ------------------------------------------------------------
 # ❌ Funktion: Remove-JsonEntry
-# Zweck:   Löscht Einträge in JSON-Arrays anhand eines Feldwerts.
-# Beispiel: Remove-JsonEntry -Path $p -Key "Projektname" -Value "Testprojekt"
 # ------------------------------------------------------------
 function Remove-JsonEntry {
     param(
