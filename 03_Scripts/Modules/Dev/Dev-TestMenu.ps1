@@ -46,7 +46,7 @@ $optionsSub = @{
 
 # Hauptmenü-Definition mit automatischem Aufruf
 $options2 = @{
-    "1" = "Untermenü öffnen|Show-SubMenu -MenuTitle 'Untermenü – Test 2' -Options $optionsSub"
+    "1" = "Untermenü öffnen|Show-SubMenu -MenuTitle 'Untermenü – Test 2' -Options `$optionsSub"
     "2" = "Hauptaktion|Write-Host 'Hauptaktion wurde ausgeführt.' -ForegroundColor Magenta"
     "3" = "Weitere Aktion|Write-Host 'Dritte Testaktion im Hauptmenü' -ForegroundColor Cyan"
 }
