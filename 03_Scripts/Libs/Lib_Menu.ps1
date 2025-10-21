@@ -1,6 +1,6 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.4.1
+# Version: LIB_V1.4.3
 # Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
@@ -16,7 +16,8 @@ $global:MenuLogPath = "$PSScriptRoot\..\..\04_Logs\System_Log.txt"
 # Sitzungsstart markieren (nur einmal pro Lauf)
 # ------------------------------------------------------------
 if (-not $global:MenuSessionStarted) {
-    $sessionHeader = "--------------------------------------------`n[{0}] Neue Menü-Session gestartet`n--------------------------------------------" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $sessionHeader = "--------------------------------------------`n[{0}] Neue Menü-Session gestartet`n--------------------------------------------" -f $timestamp
     Add-Content -Path $global:MenuLogPath -Value $sessionHeader
     $global:MenuSessionStarted = $true
 }
@@ -25,8 +26,10 @@ if (-not $global:MenuSessionStarted) {
 # Menüstack beim Start der Session zurücksetzen
 # ------------------------------------------------------------
 if ($global:MenuStack.Count -gt 0) {
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $logText = "[{0}] Menüstack zurückgesetzt (neue Sitzung)" -f $timestamp
+    Add-Content -Path $global:MenuLogPath -Value $logText
     $global:MenuStack = @()
-    Add-Content -Path $global:MenuLogPath -Value "[{0}] Menüstack zurückgesetzt (neue Sitzung)" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 }
 
 # ------------------------------------------------------------
