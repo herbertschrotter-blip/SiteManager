@@ -34,17 +34,26 @@ $options1 = @{
 Show-SubMenu -MenuTitle "🧩 Test 1 – Einfaches Menü" -Options $options1 -ReturnAfterAction
 
 # ------------------------------------------------------------
-# 🧩 Test 2: Menü mit Rücksprungfunktion (geschachtelt)
+# 🧩 Test 2: Menü mit Untermenü (verschachtelt, auto-erkennung)
 # ------------------------------------------------------------
+
+# Untermenü-Definition
 $optionsSub = @{
     "1" = "Untermenü-Option 1|Write-Host 'Untermenü Aktion 1' -ForegroundColor Yellow"
     "2" = "Untermenü-Option 2|Write-Host 'Untermenü Aktion 2' -ForegroundColor Yellow"
+    "3" = "Zurück zum Hauptmenü|return '0'"
 }
+
+# Hauptmenü-Definition mit automatischem Aufruf
 $options2 = @{
     "1" = "Untermenü öffnen|Show-SubMenu -MenuTitle '🔹 Untermenü – Test 2' -Options $optionsSub"
     "2" = "Hauptaktion|Write-Host 'Hauptaktion wurde ausgeführt.' -ForegroundColor Magenta"
+    "3" = "Weitere Aktion|Write-Host 'Dritte Testaktion im Hauptmenü' -ForegroundColor Cyan"
 }
-Show-SubMenu -MenuTitle "🧩 Test 2 – Menü mit Untermenü" -Options $options2
+
+# Menü starten
+Show-SubMenu -MenuTitle "🧩 Test 2 – Menü mit Untermenü (LIB_V1.3.0)" -Options $options2
+
 
 # ------------------------------------------------------------
 # 🧩 Test 3: DebugMode-Erkennung & Fehlerbehandlung
