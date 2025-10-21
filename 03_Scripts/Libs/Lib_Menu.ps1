@@ -1,7 +1,7 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.5.0
-# Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung (parametergesteuert)
+# Version: LIB_V1.5.1
+# Zweck:   Menüführung mit Rückkehrfunktion, Logging, Menüstack & Konfigurationssteuerung (ohne Debug-System)
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
 # ============================================================
@@ -17,7 +17,6 @@ if (-not (Test-Path $configPath)) {
         Version = "CFG_V1.0.0"
         Menu    = @{
             ShowPath          = $false
-            DebugDefault      = $false
             MaxLogFiles       = 10
             LogFilePrefix     = "Menu_Log_"
             LogDateFormat     = "yyyy-MM-dd_HHmm"
@@ -26,7 +25,6 @@ if (-not (Test-Path $configPath)) {
                 Title     = "White"
                 Highlight = "Cyan"
                 Error     = "Red"
-                Debug     = "DarkYellow"
             }
         }
     }
@@ -62,7 +60,6 @@ if (-not $menuConfig.ColorScheme) {
         Title     = "White"
         Highlight = "Cyan"
         Error     = "Red"
-        Debug     = "DarkYellow"
     }
 }
 
@@ -160,13 +157,6 @@ function Show-SubMenu {
     # Stack aktualisieren
     Push-MenuStack -Title $MenuTitle
 
-    # DebugMode prüfen
-    try {
-        . "$PSScriptRoot\Lib_Systeminfo.ps1"
-        $debugMode = Get-DebugMode
-    }
-    catch { $debugMode = $menuConfig.DebugDefault }
-
     # Hauptmenü-Schleife
     while ($true) {
         Clear-Host
@@ -180,8 +170,6 @@ function Show-SubMenu {
         if ($menuConfig.ShowPath -and $menuPath -ne "[ROOT]") {
             Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
         }
-
-        if ($debugMode) { Write-Host "DEBUG-MODE AKTIVIERT`n" -ForegroundColor $menuConfig.ColorScheme.Debug }
 
         foreach ($key in ($Options.Keys | Sort-Object {
             if ($_ -match '^\d+$') { [int]$_ } else { $_ }
@@ -199,7 +187,6 @@ function Show-SubMenu {
         if ($choice -match '^(x|X)$') {
             Write-Host "`nProgramm wird beendet ..." -ForegroundColor Yellow
             Write-MenuLog -MenuTitle $MenuTitle -Selection "X" -Action "Programm beendet"
-            try { Set-DebugMode -Value $false } catch {}
             Start-Sleep -Seconds 1
             exit
         }
@@ -214,7 +201,6 @@ function Show-SubMenu {
         # Auswahl ausführen
         if ($Options.ContainsKey($choice)) {
             $action = $Options[$choice].Split('|')[1]
-            if ($debugMode) { Write-Host "Ausführung: $action" -ForegroundColor $menuConfig.ColorScheme.Debug }
 
             try {
                 Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action $action
