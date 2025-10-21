@@ -1,6 +1,6 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.4.0
+# Version: LIB_V1.4.1
 # Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
@@ -19,6 +19,14 @@ if (-not $global:MenuSessionStarted) {
     $sessionHeader = "────────────────────────────────────────────`n[{0}] 🧭 Neue Menü-Session gestartet`n────────────────────────────────────────────" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     Add-Content -Path $global:MenuLogPath -Value $sessionHeader
     $global:MenuSessionStarted = $true
+}
+
+# ------------------------------------------------------------
+# 🔄 Menüstack beim Start der Session zurücksetzen
+# ------------------------------------------------------------
+if ($global:MenuStack.Count -gt 0) {
+    $global:MenuStack = @()
+    Add-Content -Path $global:MenuLogPath -Value "[{0}] 🔄 Menüstack zurückgesetzt (neue Sitzung)" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 }
 
 # ------------------------------------------------------------
