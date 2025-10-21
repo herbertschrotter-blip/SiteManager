@@ -1,16 +1,32 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.4.5
+# Version: LIB_V1.4.6
 # Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
 # ============================================================
 
 # ------------------------------------------------------------
-# Globale Variablen
+# Globale Variablen & Log-Rotation
 # ------------------------------------------------------------
+$logDir = "$PSScriptRoot\..\..\04_Logs"
+if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+
+# Neue Logdatei pro Sitzung mit Zeitstempel
+$timestamp = (Get-Date).ToString("yyyy-MM-dd_HHmm")
+$global:MenuLogPath = Join-Path $logDir "Menu_Log_$timestamp.txt"
+
+# Alte Logs bereinigen (max. 10 behalten)
+$logFiles = Get-ChildItem -Path $logDir -Filter "Menu_Log_*.txt" | Sort-Object LastWriteTime -Descending
+if ($logFiles.Count -gt 10) {
+    $oldLogs = $logFiles | Select-Object -Skip 10
+    foreach ($log in $oldLogs) {
+        try { Remove-Item $log.FullName -Force } catch {}
+    }
+}
+
+# Menüstack initialisieren
 if (-not $global:MenuStack) { $global:MenuStack = @() }
-$global:MenuLogPath = "$PSScriptRoot\..\..\04_Logs\System_Log.txt"
 
 # ------------------------------------------------------------
 # Sitzungsstart markieren (nur einmal pro Lauf)
@@ -98,9 +114,7 @@ function Show-SubMenu {
         Write-Host ("        " + ($MenuTitle -replace '^\s+', ''))
         Write-Host "============================================="
 
-        # ------------------------------------------------------------
         # Pfadanzeige deaktiviert (optional aktivierbar)
-        # ------------------------------------------------------------
         # if ($menuPath -ne "[ROOT]") {
         #     Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
         # }
@@ -128,7 +142,7 @@ function Show-SubMenu {
             exit
         }
 
-        # Zurück (B)
+        # Zurück
         if ($choice -match '^(b|B)$') {
             Pop-MenuStack
             Write-MenuLog -MenuTitle $MenuTitle -Selection "B" -Action "Zurück"
