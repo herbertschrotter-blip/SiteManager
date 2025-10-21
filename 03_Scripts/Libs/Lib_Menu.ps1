@@ -1,23 +1,49 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.5.1
-# Zweck:   Menüsystem mit Navigation, Logging, Stack-Verwaltung & konfigurierbarer Parameterdatei
+# Version: LIB_V1.5.2
+# Zweck:   Menüsystem mit Navigation, Logging, Stack-Verwaltung & PathManager-Unterstützung
 # Autor:   Herbert Schrotter
-# Datum:   21.10.2025
+# Datum:   22.10.2025
 # ============================================================
 # ManifestHint:
 #   ExportFunctions: Show-SubMenu, Write-MenuLog, Push-MenuStack, Pop-MenuStack, Get-CurrentMenuPath
 #   Description: Zentrale Menüsteuerung des Site Managers mit Logging, Rückkehrfunktion und Pfadanzeige.
 #   Category: Core
 #   Tags: Menu, Logging, Framework, SiteManager
-#   Dependencies: (none)
+#   Dependencies: Lib_PathManager.ps1
 # ============================================================
 
 
 # ------------------------------------------------------------
-# Parameterdatei prüfen oder neu anlegen
+# 🔹 PathManager-Integration
 # ------------------------------------------------------------
-$configPath = "$PSScriptRoot\..\..\01_Config\Menu_Config.json"
+try {
+    $pathManagerPath = "$PSScriptRoot\Lib_PathManager.ps1"
+    if (-not (Test-Path $pathManagerPath)) {
+        $pathManagerPath = "$PSScriptRoot\..\Libs\Lib_PathManager.ps1"
+    }
+
+    if (Test-Path $pathManagerPath) {
+        . $pathManagerPath
+        $pathMap = Get-PathMap
+        Write-Host "✅ PathManager geladen – dynamische Pfade aktiviert." -ForegroundColor Green
+    }
+    else {
+        throw "Lib_PathManager.ps1 nicht gefunden – Fallback auf lokale Pfade."
+    }
+}
+catch {
+    Write-Host "⚠️ PathManager nicht verfügbar, verwende Standardpfade." -ForegroundColor Yellow
+    $pathMap = @{
+        Config = "$PSScriptRoot\..\..\01_Config"
+        Logs   = "$PSScriptRoot\..\..\04_Logs"
+    }
+}
+
+# ------------------------------------------------------------
+# 🔹 Parameterdatei prüfen oder neu anlegen
+# ------------------------------------------------------------
+$configPath = Join-Path $pathMap.Config "Menu_Config.json"
 if (-not (Test-Path $configPath)) {
     Write-Host "Parameterdatei nicht gefunden. Erstelle Standard-Konfiguration ..." -ForegroundColor Yellow
 
@@ -38,15 +64,16 @@ if (-not (Test-Path $configPath)) {
     }
 
     $json = $defaultConfig | ConvertTo-Json -Depth 4
-    $configDir = Split-Path $configPath
-    if (-not (Test-Path $configDir)) { New-Item -Path $configDir -ItemType Directory | Out-Null }
+    if (-not (Test-Path $pathMap.Config)) {
+        New-Item -Path $pathMap.Config -ItemType Directory -Force | Out-Null
+    }
     $json | Out-File -FilePath $configPath -Encoding UTF8
 
     Write-Host "Standard-Konfiguration erstellt unter: $configPath" -ForegroundColor Green
 }
 
 # ------------------------------------------------------------
-# Parameterdatei laden
+# 🔹 Parameterdatei laden
 # ------------------------------------------------------------
 try {
     $config = Get-Content $configPath -Raw | ConvertFrom-Json
@@ -72,10 +99,10 @@ if (-not $menuConfig.ColorScheme) {
 }
 
 # ------------------------------------------------------------
-# Log-Initialisierung (mit Parametern aus Config)
+# 🔹 Log-Initialisierung (mit Parametern aus Config)
 # ------------------------------------------------------------
-$logDir = "$PSScriptRoot\..\..\04_Logs"
-if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+$logDir = $pathMap.Logs
+if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory -Force | Out-Null }
 
 $timestamp = (Get-Date).ToString($menuConfig.LogDateFormat)
 $global:MenuLogPath = Join-Path $logDir ("{0}{1}.txt" -f $menuConfig.LogFilePrefix, $timestamp)
@@ -101,12 +128,12 @@ if ($menuConfig.LogRetentionDays -gt 0) {
 }
 
 # ------------------------------------------------------------
-# Menüstack initialisieren
+# 🔹 Menüstack initialisieren
 # ------------------------------------------------------------
 if (-not $global:MenuStack) { $global:MenuStack = @() }
 
 # ------------------------------------------------------------
-# Sitzungsstart markieren (nur einmal pro Lauf)
+# 🔹 Sitzungsstart markieren (nur einmal pro Lauf)
 # ------------------------------------------------------------
 if (-not $global:MenuSessionStarted) {
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -116,9 +143,8 @@ if (-not $global:MenuSessionStarted) {
 }
 
 # ------------------------------------------------------------
-# Hilfsfunktionen: Logging & Stack
+# 🔹 Hilfsfunktionen: Logging & Stack
 # ------------------------------------------------------------
-
 function Write-MenuLog {
     param(
         [string]$MenuTitle,
@@ -153,7 +179,7 @@ function Get-CurrentMenuPath {
 }
 
 # ------------------------------------------------------------
-# Hauptfunktion: Show-SubMenu
+# 🔹 Hauptfunktion: Show-SubMenu
 # ------------------------------------------------------------
 function Show-SubMenu {
     param(
