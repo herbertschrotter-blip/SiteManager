@@ -7,37 +7,33 @@
 # ============================================================
 
 # ------------------------------------------------------------
-# 🔧 Globale Variablen
+# Globale Variablen
 # ------------------------------------------------------------
 if (-not $global:MenuStack) { $global:MenuStack = @() }
 $global:MenuLogPath = "$PSScriptRoot\..\..\04_Logs\System_Log.txt"
 
 # ------------------------------------------------------------
-# 🧭 Sitzungsstart markieren (nur einmal pro Lauf)
+# Sitzungsstart markieren (nur einmal pro Lauf)
 # ------------------------------------------------------------
 if (-not $global:MenuSessionStarted) {
-    $sessionHeader = "────────────────────────────────────────────`n[{0}] 🧭 Neue Menü-Session gestartet`n────────────────────────────────────────────" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $sessionHeader = "--------------------------------------------`n[{0}] Neue Menü-Session gestartet`n--------------------------------------------" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     Add-Content -Path $global:MenuLogPath -Value $sessionHeader
     $global:MenuSessionStarted = $true
 }
 
 # ------------------------------------------------------------
-# 🔄 Menüstack beim Start der Session zurücksetzen
+# Menüstack beim Start der Session zurücksetzen
 # ------------------------------------------------------------
 if ($global:MenuStack.Count -gt 0) {
     $global:MenuStack = @()
-    Add-Content -Path $global:MenuLogPath -Value "[{0}] 🔄 Menüstack zurückgesetzt (neue Sitzung)" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    Add-Content -Path $global:MenuLogPath -Value "[{0}] Menüstack zurückgesetzt (neue Sitzung)" -f (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 }
 
 # ------------------------------------------------------------
-# 🧩 Hilfsfunktionen: Logging & Stack
+# Hilfsfunktionen: Logging & Stack
 # ------------------------------------------------------------
 
 function Write-MenuLog {
-    <#
-        .SYNOPSIS
-            Schreibt Menüaktionen ins System-Log.
-    #>
     param(
         [string]$MenuTitle,
         [string]$Selection,
@@ -50,7 +46,7 @@ function Write-MenuLog {
         Add-Content -Path $global:MenuLogPath -Value $logEntry
     }
     catch {
-        Write-Host "⚠️ Fehler beim Schreiben des Menülogs: $($_.Exception.Message)" -ForegroundColor DarkRed
+        Write-Host "Fehler beim Schreiben des Menülogs: $($_.Exception.Message)" -ForegroundColor DarkRed
     }
 }
 
@@ -67,24 +63,13 @@ function Pop-MenuStack {
 
 function Get-CurrentMenuPath {
     if ($global:MenuStack.Count -eq 0) { return "[ROOT]" }
-    return ($global:MenuStack -join " → ")
+    return ($global:MenuStack -join " -> ")
 }
 
 # ------------------------------------------------------------
-# 🧩 Hauptfunktion: Show-SubMenu
+# Hauptfunktion: Show-SubMenu
 # ------------------------------------------------------------
 function Show-SubMenu {
-    <#
-        .SYNOPSIS
-            Zeigt ein (Unter-)Menü mit Rücksprung- und Beendenfunktion an.
-        .PARAMETER MenuTitle
-            Titel des Menüs
-        .PARAMETER Options
-            Hashtable mit Key = Auswahl, Value = "Text|Aktion"
-        .PARAMETER ReturnAfterAction
-            Option für Rückkehr nach einer Aktion
-    #>
-
     param(
         [Parameter(Mandatory)][string]$MenuTitle,
         [Parameter(Mandatory)][hashtable]$Options,
@@ -94,14 +79,14 @@ function Show-SubMenu {
     # Stack aktualisieren
     Push-MenuStack -Title $MenuTitle
 
-    # 🧠 DebugMode prüfen
+    # DebugMode prüfen
     try {
         . "$PSScriptRoot\Lib_Systeminfo.ps1"
         $debugMode = Get-DebugMode
     }
     catch { $debugMode = $false }
 
-    # 🔁 Hauptmenü-Schleife
+    # Hauptmenü-Schleife
     while ($true) {
         Clear-Host
         $menuPath = Get-CurrentMenuPath
@@ -110,9 +95,9 @@ function Show-SubMenu {
         Write-Host ("        " + ($MenuTitle -replace '^\s+', ''))
         Write-Host "============================================="
         if ($menuPath -ne "[ROOT]") {
-            Write-Host ("📂 Pfad: " + $menuPath) -ForegroundColor DarkGray
+            Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
         }
-        if ($debugMode) { Write-Host "🪲 DEBUG-MODE AKTIVIERT`n" -ForegroundColor DarkYellow }
+        if ($debugMode) { Write-Host "DEBUG-MODE AKTIVIERT`n" -ForegroundColor DarkYellow }
 
         foreach ($key in ($Options.Keys | Sort-Object {
             if ($_ -match '^\d+$') { [int]$_ } else { $_ }
@@ -128,7 +113,7 @@ function Show-SubMenu {
 
         # Beenden
         if ($choice -match '^(x|X)$') {
-            Write-Host "`n👋 Programm wird beendet ..." -ForegroundColor Yellow
+            Write-Host "`nProgramm wird beendet ..." -ForegroundColor Yellow
             Write-MenuLog -MenuTitle $MenuTitle -Selection "X" -Action "Programm beendet"
             try { Set-DebugMode -Value $false } catch {}
             Start-Sleep -Seconds 1
@@ -145,11 +130,9 @@ function Show-SubMenu {
         # Auswahl ausführen
         if ($Options.ContainsKey($choice)) {
             $action = $Options[$choice].Split('|')[1]
-            if ($debugMode) { Write-Host "→ Ausführung: $action" -ForegroundColor DarkGray }
+            if ($debugMode) { Write-Host "Ausführung: $action" -ForegroundColor DarkGray }
 
-            # ------------------------------------------------------------
-            # 🔍 Erweiterung: verschachtelte Menüs automatisch erkennen
-            # ------------------------------------------------------------
+            # Verschachtelte Menüs automatisch erkennen
             if ($action -match '^Show-SubMenu') {
                 try {
                     $entry = $Options[$choice]
@@ -168,19 +151,17 @@ function Show-SubMenu {
                     }
                 }
                 catch {
-                    Write-Host "⚠️ Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
+                    Write-Host "Fehler beim Öffnen des Untermenüs: $($_.Exception.Message)" -ForegroundColor Red
                 }
             }
 
-            # ------------------------------------------------------------
             # Standardaktion ausführen
-            # ------------------------------------------------------------
             try {
                 Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action $action
                 Invoke-Expression $action
             }
             catch {
-                Write-Host "❌ Fehler beim Ausführen von '$action': $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "Fehler beim Ausführen von '$action': $($_.Exception.Message)" -ForegroundColor Red
                 Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Fehler: $($_.Exception.Message)"
             }
 
@@ -191,7 +172,7 @@ function Show-SubMenu {
             }
         }
         else {
-            Write-Host "⚠️ Ungültige Eingabe. Bitte erneut versuchen." -ForegroundColor Red
+            Write-Host "Ungültige Eingabe. Bitte erneut versuchen." -ForegroundColor Red
             Start-Sleep 1
         }
     }
