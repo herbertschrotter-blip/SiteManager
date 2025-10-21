@@ -1,35 +1,43 @@
 # ============================================================
 # Modul: Test-LibJson.ps1
-# Version: DEV_V1.1.2
-# Zweck:   Umfassender automatischer Test für Lib_Json.ps1
+# Version: DEV_V1.3.0
+# Zweck:   Manueller Test für Lib_Json.ps1 mit PathManager-Unterstützung
 # Autor:   Herbert Schrotter
-# Datum:   21.10.2025
+# Datum:   22.10.2025
 # ============================================================
 # ManifestHint:
 #   ExportFunctions: Test-LibJson
-#   Description: Vollautomatischer Test für alle JSON-Funktionen der Lib_Json.ps1
+#   Description: Manueller Test für alle JSON-Funktionen der Lib_Json.ps1 mit dynamischer Pfaderkennung
 #   Category: Dev
-#   Tags: JSON, Test, Developer, Debug, Validation
-#   Dependencies: Lib_Json.ps1
+#   Tags: JSON, Test, Developer, Debug, Validation, Paths, Interactive
+#   Dependencies: Lib_Json.ps1, Lib_PathManager.ps1
 # ============================================================
 
 # ------------------------------------------------------------
-# 🔧 Library laden (korrigierter Pfad)
+# 🔧 Libraries laden
 # ------------------------------------------------------------
-$libPath = "$PSScriptRoot\..\..\Libs\Lib_Json.ps1"
+$libJsonPath        = "$PSScriptRoot\..\..\Libs\Lib_Json.ps1"
+$libPathManagerPath = "$PSScriptRoot\..\..\Libs\Lib_PathManager.ps1"
 
-if (-not (Test-Path $libPath)) {
-    Write-Host "❌ Lib_Json.ps1 nicht gefunden unter: $libPath" -ForegroundColor Red
+if (-not (Test-Path $libJsonPath)) {
+    Write-Host "❌ Lib_Json.ps1 nicht gefunden unter: $libJsonPath" -ForegroundColor Red
     exit
 }
-. $libPath
+if (-not (Test-Path $libPathManagerPath)) {
+    Write-Host "❌ Lib_PathManager.ps1 nicht gefunden unter: $libPathManagerPath" -ForegroundColor Red
+    exit
+}
+
+. $libPathManagerPath
+. $libJsonPath
 
 # ------------------------------------------------------------
-# ⚙️ Testpfade (korrigiert)
+# ⚙️ Testpfade automatisch über PathManager
 # ------------------------------------------------------------
-$testFolder = "$PSScriptRoot\..\..\..\01_Config\Tests"
+$paths = Get-PathMap
+$testFolder = Join-Path $paths.Config "Tests"
 $testFile   = Join-Path $testFolder "Json_Test.json"
-$logPath    = "$PSScriptRoot\..\..\..\04_Logs\Json_Log.txt"
+$logPath    = Join-Path $paths.Logs "Json_Log.txt"
 
 if (-not (Test-Path $testFolder)) { New-Item -ItemType Directory -Path $testFolder | Out-Null }
 
@@ -45,13 +53,19 @@ function Show-Result {
     }
 }
 
+function Pause-Step {
+    param([string]$Message)
+    Write-Host ""
+    Read-Host "⏸️  Weiter mit [ENTER] – $Message"
+}
+
 # ------------------------------------------------------------
 # 🧪 Hauptfunktion: Test-LibJson
 # ------------------------------------------------------------
 function Test-LibJson {
 
     Write-Host "`n============================================" -ForegroundColor Cyan
-    Write-Host "🧩 STARTE FUNKTIONSTEST DER LIB_JSON.PS1" -ForegroundColor White
+    Write-Host "🧩 MANUELLER FUNKTIONSTEST DER LIB_JSON.PS1" -ForegroundColor White
     Write-Host "============================================" -ForegroundColor Cyan
 
     # Alte Dateien löschen
@@ -59,6 +73,7 @@ function Test-LibJson {
     if (Test-Path $logPath)  { Remove-Item $logPath  -Force }
 
     try {
+        Pause-Step "Starte mit Test 1 – Datei erstellen & lesen"
         # 1️⃣ Test: Datei-Erstellung & Lesen
         Save-JsonFile -Data @() -Path $testFile
         $exists = Test-Path $testFile
@@ -67,33 +82,39 @@ function Test-LibJson {
         $data = Get-JsonFile -Path $testFile
         Show-Result "Datei lesbar" ($data -is [array])
 
+        Pause-Step "Test 2 – Eintrag hinzufügen"
         # 2️⃣ Test: Hinzufügen eines Eintrags
         $entry = @{ Name = "ProjektX"; Wert = 123; Zeit = (Get-Date).ToString("HH:mm:ss") }
         Add-JsonEntry -Path $testFile -Entry $entry
         $data = Get-JsonFile -Path $testFile
         Show-Result "Eintrag hinzugefügt" ($data.Count -eq 1 -and $data[0].Name -eq "ProjektX")
 
+        Pause-Step "Test 3 – Wert aktualisieren"
         # 3️⃣ Test: Wert aktualisieren
         Update-JsonValue -Path $testFile -Key "Version" -Value "1.0.0"
         $updated = Get-JsonFile -Path $testFile
         $ok = $updated | Get-Member -Name "Version" -ErrorAction SilentlyContinue
         Show-Result "Wert 'Version' hinzugefügt" ($null -ne $ok)
 
+        Pause-Step "Test 4 – Eintrag löschen"
         # 4️⃣ Test: Eintrag löschen
         Remove-JsonEntry -Path $testFile -Key "Name" -Value "ProjektX"
         $jsonAfterRemove = Get-JsonFile -Path $testFile
         Show-Result "Eintrag gelöscht" ($jsonAfterRemove.Count -eq 0)
 
+        Pause-Step "Test 5 – Leere Datei automatisch erstellen"
         # 5️⃣ Test: Automatische Erstellung bei fehlender Datei
         if (Test-Path $testFile) { Remove-Item $testFile -Force }
         $jsonNew = Get-JsonFile -Path $testFile -CreateIfMissing
         Show-Result "Leere Datei automatisch erstellt" (Test-Path $testFile)
 
+        Pause-Step "Test 6 – Ungültiges JSON simulieren"
         # 6️⃣ Test: Ungültiges JSON erkennen
         Set-Content -Path $testFile -Value "{ invalid json" -Encoding utf8
         $jsonInvalid = Get-JsonFile -Path $testFile
         Show-Result "Fehlerbehandlung bei ungültigem JSON" ($jsonInvalid.Count -eq 0)
 
+        Pause-Step "Test 7 – Logging prüfen"
         # 7️⃣ Test: Logging prüfen
         $logExists = Test-Path $logPath
         Show-Result "Logging-Datei vorhanden" $logExists
@@ -103,6 +124,7 @@ function Test-LibJson {
             Show-Result "Log-Einträge vorhanden" ($okLog.Count -gt 0)
         }
 
+        Pause-Step "Test 8 – Roundtrip-Integrität"
         # 8️⃣ Test: JSON-Integrität (Lesen & Schreiben mehrfach)
         $testObj = @(
             @{ ID = 1; Name = "Alpha" },
@@ -112,6 +134,7 @@ function Test-LibJson {
         $roundTrip = Get-JsonFile -Path $testFile
         Show-Result "Roundtrip-Integrität (Lesen=Schreiben)" ($roundTrip.Count -eq 2 -and $roundTrip[1].Name -eq "Beta")
 
+        Pause-Step "Test 9 – Performance-Test (100 Schreibvorgänge)"
         # 9️⃣ Test: Performance (100 Schreibvorgänge)
         $okPerf = $true
         try {
@@ -130,7 +153,7 @@ function Test-LibJson {
     Write-Host "`n📄 JSON-Datei: $testFile"
     Write-Host "🧾 Log-Datei:  $logPath"
     Write-Host "`n============================================" -ForegroundColor Cyan
-    Write-Host "✅ TESTS ABGESCHLOSSEN" -ForegroundColor Green
+    Write-Host "✅ MANUELLER TEST ABGESCHLOSSEN" -ForegroundColor Green
     Write-Host "============================================" -ForegroundColor Cyan
 }
 
