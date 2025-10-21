@@ -1,6 +1,6 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.4.3
+# Version: LIB_V1.4.4
 # Zweck:   Einheitliche Menüführung mit Rückkehrfunktion, Logging, Menüstack & Untermenü-Erkennung
 # Autor:   Herbert Schrotter
 # Datum:   21.10.2025
@@ -97,9 +97,14 @@ function Show-SubMenu {
         Write-Host "============================================="
         Write-Host ("        " + ($MenuTitle -replace '^\s+', ''))
         Write-Host "============================================="
-        if ($menuPath -ne "[ROOT]") {
-            Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
-        }
+
+        # ------------------------------------------------------------
+        # Pfadanzeige deaktiviert (optional aktivierbar)
+        # ------------------------------------------------------------
+        # if ($menuPath -ne "[ROOT]") {
+        #     Write-Host ("Pfad: " + $menuPath) -ForegroundColor DarkGray
+        # }
+
         if ($debugMode) { Write-Host "DEBUG-MODE AKTIVIERT`n" -ForegroundColor DarkYellow }
 
         foreach ($key in ($Options.Keys | Sort-Object {
