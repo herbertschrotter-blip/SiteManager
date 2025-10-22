@@ -45,7 +45,7 @@ function Load-LogConfig {
             RotationMode        = "Both"   # "Count", "Age" oder "Both"
             EnableDebug         = $true
             EnableConsoleOutput = $true
-            DateFormat          = "yyyy-MM-dd_HHmm"
+            DateFormat          = "yyyy-MM-dd_HHmm_ss"
             LogLevels           = @("INFO","WARN","ERROR","DEBUG")
             LogStructure        = "[{Timestamp}] [{Level}] [{Module}] {Message}"
             IncludeSessionHeader = $true
