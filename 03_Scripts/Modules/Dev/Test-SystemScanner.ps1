@@ -119,3 +119,13 @@ function Invoke-SystemScannerTest {
         Write-Host "❌ Schwerer Fehler im SystemScanner-Test: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
+# ------------------------------------------------------------
+# ⚙️ AUTOMATISCHER START BEIM DIREKTAUFRUF
+# ------------------------------------------------------------
+if ($MyInvocation.InvocationName -eq "&" -or
+    ($MyInvocation.MyCommand.Path -eq $PSCommandPath -and
+     $MyInvocation.InvocationName -notmatch "Invoke-SystemScannerTest")) {
+
+    Write-Host "`n⚙️  Auto-Start erkannt – führe SystemScanner-Test aus..." -ForegroundColor DarkGray
+    Invoke-SystemScannerTest
+}
