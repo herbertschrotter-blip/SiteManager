@@ -1,18 +1,19 @@
 # ============================================================
-# 🧩 TOOL – Script-Backup (PathManager + Config + ZIP)
-# Version: TOOL_V1.4.1
-# Zweck:   Liest Backup_Config.json und erstellt ZIPs für alle aktivierten Ordner (Default: inaktiv).
+# 🧩 TOOL – Script-Backup (Smart Merge – Aktiv-Status Fix)
+# Version: TOOL_V1.5.4
+# Zweck:   Beibehaltung des Aktiv-Status durch Pfadvergleich im Merge-Modus.
 # Autor:   Herbert Schrotter
 # Datum:   23.10.2025
 # ============================================================
 
 # ManifestHint:
 #   ExportFunctions: Update-BackupConfig, Run-BackupFromConfig
-#   Description: Erstellt ZIP-Backups basierend auf Backup_Config.json (Default = inaktiv, PathManager + Get-PathSubDirs).
+#   Description: Merge-Modus mit intelligentem Pfad-Vergleich (Aktiv-Status bleibt garantiert erhalten).
 #   Category: Tools
-#   Tags: Backup, Config, Zip, PathManager, Recursive, Selective
+#   Tags: Backup, Config, Merge, Hierarchy, PathManager, Recursive, SmartMerge
 #   Dependencies: Lib_PathManager
 # ============================================================
+
 
 # ------------------------------------------------------------
 # 🔹 PathManager laden
@@ -45,70 +46,144 @@ catch {
 }
 
 # ------------------------------------------------------------
-# ⚙️ Funktion: Backup_Config.json aktualisieren (Default = false)
+# 🔧 Hilfsfunktion: Hierarchische Struktur neu aufbauen
+# ------------------------------------------------------------
+function Build-FolderTree {
+    param([string]$BasePath)
+
+    $result = @{}
+
+    $folders = Get-ChildItem -Path $BasePath -Directory -ErrorAction SilentlyContinue
+    foreach ($folder in $folders) {
+        $subTree = Build-FolderTree -BasePath $folder.FullName
+        $result[$folder.Name] = [ordered]@{
+            Pfad        = $folder.FullName
+            Aktiv       = $false
+            Unterordner = $subTree
+        }
+    }
+    return $result
+}
+
+# ------------------------------------------------------------
+# 🔧 Helper: PSCustomObject → Hashtable
+# ------------------------------------------------------------
+function ConvertTo-Hashtable {
+    param([Parameter(Mandatory)] $obj)
+
+    $hash = @{}
+    if ($obj -is [pscustomobject]) {
+        foreach ($prop in $obj.PSObject.Properties) {
+            $hash[$prop.Name] = $prop.Value
+        }
+    }
+    elseif ($obj -is [hashtable]) {
+        $hash = $obj
+    }
+    return $hash
+}
+
+# ------------------------------------------------------------
+# 🔧 Merge-Funktion: Pfadbasierter Vergleich
+# ------------------------------------------------------------
+function Merge-FolderTree {
+    param(
+        [Parameter(Mandatory)] $newTree,
+        [Parameter(Mandatory)] $oldTree
+    )
+
+    $newTree = ConvertTo-Hashtable $newTree
+    $oldTree = ConvertTo-Hashtable $oldTree
+
+    foreach ($key in $newTree.Keys) {
+        $newItem = $newTree[$key]
+        $matched = $null
+
+        # 🔍 Vergleiche anhand des Pfades statt des Keys
+        foreach ($oldKey in (ConvertTo-Hashtable $oldTree).Keys) {
+            $oldItem = $oldTree[$oldKey]
+            if ($null -ne $oldItem.Pfad -and $oldItem.Pfad -eq $newItem.Pfad) {
+                $matched = $oldItem
+                break
+            }
+        }
+
+        if ($null -ne $matched) {
+            # ✅ Aktiv übernehmen
+            $newTree[$key].Aktiv = $matched.Aktiv
+
+            # 🔁 Rekursiv weiter für Unterordner
+            if ($newTree[$key].Unterordner.Count -gt 0 -or $matched.Unterordner.Count -gt 0) {
+                $newTree[$key].Unterordner = Merge-FolderTree $newTree[$key].Unterordner $matched.Unterordner
+            }
+        }
+    }
+
+    return $newTree
+}
+
+# ------------------------------------------------------------
+# ⚙️ Funktion: Backup_Config.json (Merge-Modus)
 # ------------------------------------------------------------
 function Update-BackupConfig {
     param([string]$ConfigPath = (Join-Path $pathMap.Config "Backup_Config.json"))
 
-    Write-Host "`n🧩 Erstelle/aktualisiere Backup_Config.json (Default = inaktiv)..." -ForegroundColor Cyan
+    Write-Host "`n🧩 Aktualisiere Backup_Config.json (Merge-Modus)..." -ForegroundColor Cyan
+
     try {
-        if (-not $pathMap.Root -or -not (Test-Path $pathMap.Root)) {
+        if (-not (Test-Path $pathMap.Root)) {
             throw "Root-Pfad konnte nicht ermittelt werden."
         }
 
-        $config = [ordered]@{
-            Version     = "CFG_V1.2.2"
-            ErstelltAm  = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-            Root        = $pathMap.Root
-            Ordner      = @()
+        # 🔹 Alte Config laden (wenn vorhanden)
+        $oldConfig = $null
+        if (Test-Path $ConfigPath) {
+            try {
+                $oldConfig = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+                Write-Host "📄 Alte Config geladen – Merge wird durchgeführt." -ForegroundColor DarkGray
+            }
+            catch {
+                Write-Host "⚠️ Alte Config konnte nicht gelesen werden – wird neu erstellt." -ForegroundColor DarkYellow
+            }
         }
 
-        # Hauptordner hinzufügen
+        # 🔹 Neue Struktur aufbauen
+        $rootTree = @{}
         foreach ($prop in $pathMap.PSObject.Properties) {
             $key = $prop.Name
             $folderPath = $prop.Value
-            if ($key -eq "Root") { continue }
-            if (-not (Test-Path $folderPath)) { continue }
+            if ($key -eq "Root" -or -not (Test-Path $folderPath)) { continue }
 
-            $entry = [ordered]@{
-                Kategorie = $key
-                Pfad      = Split-Path $folderPath -Leaf
-                Vollpfad  = (Resolve-Path $folderPath).Path
-                Ebene     = "Hauptordner"
-                Aktiv     = $false   # Standard: deaktiviert
-            }
-            $config.Ordner += $entry
-        }
-
-        # Unterordner hinzufügen
-        if (Get-Command Get-PathSubDirs -ErrorAction SilentlyContinue) {
-            $subDirs = Get-PathSubDirs -BasePath $pathMap.Root
-            foreach ($dir in $subDirs) {
-                $relPath = $dir.Substring($pathMap.Root.Length).TrimStart('\','/')
-                if ([string]::IsNullOrWhiteSpace($relPath)) { continue }
-
-                $entry = [ordered]@{
-                    Kategorie = "SubDir"
-                    Pfad      = $relPath
-                    Vollpfad  = (Resolve-Path $dir).Path
-                    Ebene     = "Unterordner"
-                    Aktiv     = $false   # Standard: deaktiviert
-                }
-                $config.Ordner += $entry
+            $rootTree[(Split-Path $folderPath -Leaf)] = [ordered]@{
+                Pfad        = (Resolve-Path $folderPath).Path
+                Aktiv       = $false
+                Unterordner = (Build-FolderTree -BasePath $folderPath)
             }
         }
 
-        $config | ConvertTo-Json -Depth 6 | Out-File -FilePath $ConfigPath -Encoding utf8 -Force
-        Write-Host "✅ Backup_Config.json gespeichert unter:`n   $ConfigPath" -ForegroundColor Green
-        Write-Host ("📦 {0} Einträge hinzugefügt (Default = inaktiv)." -f $config.Ordner.Count) -ForegroundColor White
+        # 🔹 Merge mit alter Struktur, falls vorhanden
+        if ($oldConfig -and $oldConfig.Ordner) {
+            $rootTree = Merge-FolderTree $rootTree $oldConfig.Ordner
+        }
+
+        # 🔹 Neue Config speichern
+        $config = [ordered]@{
+            Version     = "CFG_V1.3.1"
+            ErstelltAm  = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            Root        = (Resolve-Path $pathMap.Root).Path
+            Ordner      = $rootTree
+        }
+
+        $config | ConvertTo-Json -Depth 15 | Out-File -FilePath $ConfigPath -Encoding utf8 -Force
+        Write-Host "✅ Backup_Config.json synchronisiert (Merge abgeschlossen)." -ForegroundColor Green
     }
     catch {
-        Write-Host ("❌ Fehler beim Erstellen der Config: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("❌ Fehler beim Aktualisieren der Config: {0}" -f $_.Exception.Message) -ForegroundColor Red
     }
 }
 
 # ------------------------------------------------------------
-# 🔹 Funktion: Run-BackupFromConfig – ZIPs erstellen
+# 🔹 Backup-Funktion (unverändert)
 # ------------------------------------------------------------
 function Run-BackupFromConfig {
     param(
@@ -116,17 +191,31 @@ function Run-BackupFromConfig {
         [string]$TargetPath = $pathMap.Backup
     )
 
-    Write-Host "`n🗂️  Starte ZIP-Backup anhand der Config ..." -ForegroundColor Yellow
+    Write-Host "`n🗂️  Starte ZIP-Backup anhand Config (Merge-Version)..." -ForegroundColor Yellow
 
     try {
         if (-not (Test-Path $ConfigPath)) {
-            Write-Host "⚠️ Keine Config gefunden – wird neu erstellt." -ForegroundColor DarkYellow
+            Write-Host "⚠️ Keine Config vorhanden – wird erstellt." -ForegroundColor DarkYellow
             Update-BackupConfig
         }
 
         $config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
-        if (-not $config.Ordner) {
-            throw "Config enthält keine Ordner-Einträge."
+        $folders = @()
+
+        # rekursiv aktive Ordner sammeln
+        function Get-ActivePaths($node) {
+            foreach ($key in $node.Keys) {
+                $item = $node[$key]
+                if ($item.Aktiv -eq $true) { $folders += $item.Pfad }
+                if ($item.Unterordner.Count -gt 0) { Get-ActivePaths $item.Unterordner }
+            }
+        }
+
+        Get-ActivePaths $config.Ordner
+
+        if ($folders.Count -eq 0) {
+            Write-Host "⚠️ Keine aktiven Ordner gefunden – nichts zu sichern." -ForegroundColor DarkYellow
+            return
         }
 
         if (-not (Test-Path $TargetPath)) {
@@ -135,38 +224,28 @@ function Run-BackupFromConfig {
 
         $ok = 0; $skipped = 0; $errors = 0
 
-        foreach ($entry in $config.Ordner) {
-            if (-not $entry.Aktiv) {
-                Write-Host ("⏸️  Überspringe inaktiven Ordner: {0}" -f $entry.Pfad) -ForegroundColor DarkGray
-                $skipped++
-                continue
-            }
-
-            $folder = $entry.Vollpfad
+        foreach ($folder in $folders) {
             if (-not (Test-Path $folder)) { continue }
-
-            $rel = $entry.Pfad -replace '^[\\/]+','' -replace '[\\/]+','__'
+            $rel = $folder.Substring($config.Root.Length).TrimStart('\','/') -replace '[\\/]+','__'
             $zipPath = Join-Path $TargetPath ($rel + ".zip")
 
             $files = Get-ChildItem -Path $folder -File -Recurse -ErrorAction SilentlyContinue
             if (-not $files -or $files.Count -eq 0) {
-                Write-Host ("⏭️  Überspringe leeren Ordner: {0}" -f $entry.Pfad) -ForegroundColor DarkGray
+                Write-Host ("⏭️  Überspringe leeren Ordner: {0}" -f $folder) -ForegroundColor DarkGray
                 $skipped++
                 continue
             }
 
-            Write-Host ("`n📦 Archiviere {0} → {1}" -f $entry.Pfad, $zipPath) -ForegroundColor White
+            Write-Host ("📦 Archiviere {0}" -f $rel) -ForegroundColor White
 
             try {
-                if (Test-Path $zipPath) {
-                    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-                }
+                if (Test-Path $zipPath) { Remove-Item $zipPath -Force -ErrorAction SilentlyContinue }
                 Compress-Archive -Path (Join-Path $folder "*") -DestinationPath $zipPath -Force
                 Write-Host ("✅ Archiv erstellt: {0}" -f (Split-Path $zipPath -Leaf)) -ForegroundColor Green
                 $ok++
             }
             catch {
-                Write-Host ("❌ Fehler beim Archivieren von {0}: {1}" -f $entry.Pfad, $_.Exception.Message) -ForegroundColor Red
+                Write-Host ("❌ Fehler beim Archivieren von {0}: {1}" -f $folder, $_.Exception.Message) -ForegroundColor Red
                 $errors++
             }
         }
@@ -175,7 +254,7 @@ function Run-BackupFromConfig {
         Write-Host ("📊 Ergebnis: {0} erstellt, {1} übersprungen, {2} Fehler" -f $ok, $skipped, $errors) -ForegroundColor White
     }
     catch {
-        Write-Host ("❌ Unerwarteter Fehler im Backup: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("❌ Fehler im Backup: {0}" -f $_.Exception.Message) -ForegroundColor Red
     }
 }
 
@@ -183,5 +262,5 @@ function Run-BackupFromConfig {
 # 🧭 Automatischer Start
 # ------------------------------------------------------------
 if ($MyInvocation.InvocationName -eq ".") {
-    Run-BackupFromConfig
+    Update-BackupConfig
 }
