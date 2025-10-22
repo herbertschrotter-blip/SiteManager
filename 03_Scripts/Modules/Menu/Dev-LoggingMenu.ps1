@@ -1,14 +1,14 @@
 # ============================================================
-# 🧩 DEV-MODUL – Logging-Testmenü
-# Version: MENU_V1.1.0
-# Zweck:   Steuert die Testfunktionen aus Dev-LogSystem.ps1
+# 🧭 DEV-MODUL – Logging-Testmenü
+# Version: MENU_V1.1.1
+# Zweck:   Steuert die Testfunktionen aus Dev-LogSystem.ps1 über Lib_Menu.
 # Autor:   Herbert Schrotter
 # Datum:   23.10.2025
 # ============================================================
 
 # ManifestHint:
 #   ExportFunctions: (none)
-#   Description: Menümodul für das Dev-LogSystem – ruft Testfunktionen direkt über Lib_Menu auf.
+#   Description: Menümodul für das Dev-LogSystem – vollständig gesteuert über Lib_Menu.
 #   Category: Menu
 #   Tags: Logging, DevTools, Menu
 #   Dependencies: Lib_Menu, Lib_Log
@@ -41,7 +41,7 @@ $logMenu = @{
     "2" = "Session starten|Test-InitSession"
     "3" = "Testeinträge schreiben|Test-WriteLogs"
     "4" = "Rotation testen|Test-Rotate"
-    "5" = "Session schließen|Test-CloseSession"
+    "5" = "Logdateien auflisten|Test-ListLogs"
 }
 
 Show-SubMenu -MenuTitle "🧩 Logging-Test-Menü" -Options $logMenu
