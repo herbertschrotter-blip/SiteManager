@@ -5,9 +5,10 @@
 ## 📘 Überblick
 
 **Modulname:** `Lib_PathManager.ps1`
-**Aktuelle Version:** `LIB_V1.2.3`
+**Aktuelle Version:** `LIB_V1.2.4`
 **Zweck:** Zentrale Verwaltung der Pfadstruktur innerhalb des Master Setup Frameworks.
-Dient als universelle Schnittstelle für alle Module und Libraries, um konsistente Systempfade zu ermitteln und Multi-System-Unterstützung zu bieten.
+Dient als universelle Schnittstelle für alle Module und Libraries, um konsistente Systempfade zu ermitteln,
+Multi-System-Unterstützung zu bieten **und rekursive Unterordner zu erkennen.**
 
 ---
 
@@ -23,6 +24,8 @@ Dient als universelle Schnittstelle für alle Module und Libraries, um konsisten
 | `Get-PathTemplates` | Liefert den Pfad zum Template-Verzeichnis.                                                   |
 | `Register-System`   | Registriert das aktuelle System (Benutzer + Computer) in der PathManager-Config.             |
 | `Get-ActiveSystem`  | Liest den aktuell aktiven Systeme-Eintrag aus der Config aus.                                |
+| `Get-PathSubDirs`   | Gibt eine Liste aller Unterordner (rekursiv) unterhalb eines Basispfades zurück.             |
+
 
 ---
 
@@ -91,6 +94,13 @@ Der PathManager erstellt oder aktualisiert automatisch die Datei `PathManager_Co
 * Erkennt bestehende Systeme korrekt anhand Benutzername & Computername.
 * Verhindert doppelte Einträge.
 * Aktualisiert nur den Zeitstempel bei erneutem Aufruf.
+
+### 🔸 Erweiterte Pfadfunktionen (seit V1.2.4)
+
+* Neue Funktion `Get-PathSubDirs` ermöglicht die rekursive Auflistung aller Unterordner unterhalb von `03_Scripts`.
+* Wird u. a. vom **Lib_SystemScanner** genutzt, um Dev- und Testmodule automatisch mitzuerkennen.
+* Rückgabe erfolgt als Array-Objekt mit vollständigen Pfadangaben.
+
 
 ### 🔸 Geordnete JSON-Struktur
 
@@ -165,6 +175,7 @@ Dadurch bleibt die Pfadstruktur im gesamten Framework konsistent.
 
 | Datum      | Version | Beschreibung                                                                   |
 | ---------- | ------- | ------------------------------------------------------------------------------ |
+| 2025-10-22 | V1.2.4  | Neue Funktion `Get-PathSubDirs` hinzugefügt – rekursive Unterordnererkennung für SystemScanner |
 | 2025-10-22 | V1.2.3  | Multi-System-Erkennung optimiert, geordnete JSON-Ausgabe, Duplikate verhindert |
 | 2025-10-22 | V1.2.2  | Reihenfolge der JSON-Felder fixiert (Version → Ordnerstruktur → Systeme)       |
 | 2025-10-22 | V1.2.0  | Multi-System-Unterstützung hinzugefügt                                         |
