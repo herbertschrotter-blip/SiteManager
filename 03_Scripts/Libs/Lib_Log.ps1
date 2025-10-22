@@ -1,15 +1,15 @@
 # ============================================================
-# 🧩 LIB_LOG – Framework Logging System (Multi-Session)
-# Version: LIB_V1.1.1
-# Zweck:   Zentrales Logging-System für alle Framework-Module mit paralleler Sitzungsunterstützung
+# 🧩 LIB_LOG – Framework Logging System (Single-Active Lock Mode)
+# Version: LIB_V1.2.0
+# Zweck:   Zentrales Logging-System mit Exklusiv-Zugriff (Lock)
 # Autor:   Herbert Schrotter
 # Datum:   23.10.2025
 # ============================================================
 # ManifestHint:
-#   ExportFunctions: Load-LogConfig, Initialize-LogSession, Write-FrameworkLog, Write-DebugLog, Rotate-Logs, Close-LogSession
-#   Description: Zentrales Framework-Logging mit Multi-Session-Support, Logrotation und Config-Autoerstellung
+#   ExportFunctions: Load-LogConfig, Initialize-LogSession, Write-FrameworkLog, Write-DebugLog, Rotate-Logs, Close-LogSession, Lock-LogSystem, Unlock-LogSystem
+#   Description: Framework-Logging mit exklusivem Modulzugriff (Lock-System) und Logrotation
 #   Category: Core
-#   Tags: Logging, Framework, Rotation, Config, MultiSession
+#   Tags: Logging, Framework, Lock, Config, Rotation, SiteManager
 #   Dependencies: Lib_PathManager
 # ============================================================
 
@@ -18,7 +18,34 @@
 # 🧠 Globale Variablen
 # ------------------------------------------------------------
 $global:LogConfig = @{}
-$global:ActiveLogSessions = @{}   # Mehrere aktive Sessions gleichzeitig möglich
+$global:ActiveLogSessions = @{}   # Liste aktiver Sessions (normalerweise nur 1)
+$global:LogSystemLockedBy = $null # 🧩 Nur ein Modul darf aktiv loggen
+
+
+# ------------------------------------------------------------
+# 🔒 Funktionen: Lock-Management
+# ------------------------------------------------------------
+function Lock-LogSystem {
+    param([string]$ModuleName)
+
+    if ($global:LogSystemLockedBy -and $global:LogSystemLockedBy -ne $ModuleName) {
+        Write-Host "⚠️ Logging aktuell gesperrt durch Modul: $($global:LogSystemLockedBy)" -ForegroundColor Yellow
+        return $false
+    }
+
+    $global:LogSystemLockedBy = $ModuleName
+    Write-Host "🔒 LogSystem exklusiv gesperrt durch: $ModuleName" -ForegroundColor Cyan
+    return $true
+}
+
+function Unlock-LogSystem {
+    param([string]$ModuleName)
+
+    if ($global:LogSystemLockedBy -eq $ModuleName) {
+        $global:LogSystemLockedBy = $null
+        Write-Host "🔓 LogSystem-Freigabe durch: $ModuleName" -ForegroundColor Green
+    }
+}
 
 
 # ------------------------------------------------------------
@@ -40,10 +67,10 @@ function Load-LogConfig {
 
         # Standardwerte definieren
         $defaultConfig = [ordered]@{
-            Version              = "CFG_V1.1.1"
+            Version              = "CFG_V1.2.0"
             MaxLogsPerModule     = 10
             MaxAgeDays           = 14
-            RotationMode         = "Both"   # "Count", "Age", "Both"
+            RotationMode         = "Both"
             EnableDebug          = $true
             EnableConsoleOutput  = $true
             DateFormat           = "yyyy-MM-dd_HHmm_ss"
@@ -53,7 +80,6 @@ function Load-LogConfig {
             SessionHeaderTemplate= "Neue Log-Session für {Module} gestartet um {Timestamp}"
         }
 
-        # Wenn keine Config vorhanden → neue schreiben
         if (-not (Test-Path $configPath)) {
             $defaultConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8
             Write-Host "🆕 Log_Config.json erstellt unter $configPath" -ForegroundColor Cyan
@@ -61,16 +87,14 @@ function Load-LogConfig {
             return
         }
 
-        # Vorhandene Config laden
         $loaded = Get-Content -Path $configPath -Raw | ConvertFrom-Json
 
-        # 🔹 PSCustomObject → Hashtable konvertieren
+        # PSCustomObject → Hashtable
         $hashConfig = @{}
         foreach ($prop in $loaded.PSObject.Properties) {
             $hashConfig[$prop.Name] = $prop.Value
         }
 
-        # Konvertierte Config speichern
         $global:LogConfig = $hashConfig
         Write-Host "✅ Log_Config.json geladen und in Hashtable umgewandelt." -ForegroundColor Green
     }
@@ -82,12 +106,17 @@ function Load-LogConfig {
 
 
 # ------------------------------------------------------------
-# 🚀 Funktion: Initialize-LogSession (Multi-Session)
+# 🚀 Funktion: Initialize-LogSession (mit Lock-Prüfung)
 # ------------------------------------------------------------
 function Initialize-LogSession {
     param([string]$ModuleName = "Core")
 
     try {
+        if (-not (Lock-LogSystem -ModuleName $ModuleName)) {
+            Write-Host "❌ LogSession für $ModuleName nicht gestartet – System belegt." -ForegroundColor Red
+            return
+        }
+
         if (Get-Command Get-PathLogs -ErrorAction SilentlyContinue) {
             $logFolder = Get-PathLogs
         } else {
@@ -98,10 +127,8 @@ function Initialize-LogSession {
             New-Item -Path $logFolder -ItemType Directory | Out-Null
         }
 
-        # Logrotation pro Modul
         Rotate-Logs -ModuleName $ModuleName -LogConfig $global:LogConfig
 
-        # Neue Logdatei
         $timestamp = Get-Date -Format $global:LogConfig.DateFormat
         $logFile = Join-Path $logFolder "$($ModuleName)_Log_$timestamp.txt"
 
@@ -113,7 +140,6 @@ function Initialize-LogSession {
             "[INIT] $sessionHeader" | Out-File -FilePath $logFile -Encoding utf8
         }
 
-        # Neue Session registrieren
         $global:ActiveLogSessions[$ModuleName] = @{
             File   = $logFile
             Start  = Get-Date
@@ -132,7 +158,7 @@ function Initialize-LogSession {
 
 
 # ------------------------------------------------------------
-# ✍️ Funktion: Write-FrameworkLog (Multi-Session)
+# ✍️ Funktion: Write-FrameworkLog
 # ------------------------------------------------------------
 function Write-FrameworkLog {
     param(
@@ -143,6 +169,12 @@ function Write-FrameworkLog {
     )
 
     try {
+        # Falls kein Lock für dieses Modul → ignorieren
+        if ($global:LogSystemLockedBy -and $global:LogSystemLockedBy -ne $Module) {
+            Write-Host "⚠️ Modul '$Module' darf derzeit nicht loggen (System belegt durch $($global:LogSystemLockedBy))." -ForegroundColor DarkYellow
+            return
+        }
+
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $entry = $global:LogConfig.LogStructure `
             -replace "{Timestamp}", $timestamp `
@@ -154,7 +186,6 @@ function Write-FrameworkLog {
             $file = $global:ActiveLogSessions[$Module].File
             Add-Content -Path $file -Value $entry
         } else {
-            # Fallback, wenn keine Session aktiv ist
             $fallback = Join-Path (Join-Path $PSScriptRoot "..\..\04_Logs") "Fallback_Log.txt"
             Add-Content -Path $fallback -Value $entry
         }
@@ -212,7 +243,6 @@ function Rotate-Logs {
 
         if (-not $logs) { return }
 
-        # Nach Alter löschen
         if ($LogConfig.RotationMode -in @("Age","Both")) {
             $cutoff = (Get-Date).AddDays(-$LogConfig.MaxAgeDays)
             $oldLogs = $logs | Where-Object { $_.LastWriteTime -lt $cutoff }
@@ -222,7 +252,6 @@ function Rotate-Logs {
             }
         }
 
-        # Nach Anzahl löschen
         if ($LogConfig.RotationMode -in @("Count","Both")) {
             $remaining = Get-ChildItem -Path $logFolder -Filter "$prefix*.txt" -File |
                          Sort-Object LastWriteTime -Descending
@@ -242,7 +271,7 @@ function Rotate-Logs {
 
 
 # ------------------------------------------------------------
-# 🏁 Funktion: Close-LogSession (Multi-Session)
+# 🏁 Funktion: Close-LogSession
 # ------------------------------------------------------------
 function Close-LogSession {
     param([string]$ModuleName = "Core")
@@ -253,7 +282,7 @@ function Close-LogSession {
         $session = $global:ActiveLogSessions[$ModuleName]
         $endTime = Get-Date
         $duration = New-TimeSpan -Start $session.Start -End $endTime
-        $summary = "[CLOSE] Sitzung beendet – Dauer: {0:hh\:mm\:ss}" -f $duration
+        $summary = "[CLOSE] Sitzung beendet – Dauer: {0:hh\\:mm\\:ss}" -f $duration
 
         Add-Content -Path $session.File -Value $summary
         if ($global:LogConfig.EnableConsoleOutput) {
@@ -261,6 +290,7 @@ function Close-LogSession {
         }
 
         $global:ActiveLogSessions.Remove($ModuleName)
+        Unlock-LogSystem -ModuleName $ModuleName
     }
     catch {
         Write-Host "❌ Fehler beim Schließen des Logs ($ModuleName): $_" -ForegroundColor Red
