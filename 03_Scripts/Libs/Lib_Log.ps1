@@ -1,11 +1,10 @@
 # ============================================================
 # 🧩 LIB_LOG – Framework Logging System (Multi-Session)
-# Version: LIB_V1.1.0
+# Version: LIB_V1.1.1
 # Zweck:   Zentrales Logging-System für alle Framework-Module mit paralleler Sitzungsunterstützung
 # Autor:   Herbert Schrotter
 # Datum:   23.10.2025
 # ============================================================
-
 # ManifestHint:
 #   ExportFunctions: Load-LogConfig, Initialize-LogSession, Write-FrameworkLog, Write-DebugLog, Rotate-Logs, Close-LogSession
 #   Description: Zentrales Framework-Logging mit Multi-Session-Support, Logrotation und Config-Autoerstellung
@@ -14,14 +13,16 @@
 #   Dependencies: Lib_PathManager
 # ============================================================
 
+
 # ------------------------------------------------------------
 # 🧠 Globale Variablen
 # ------------------------------------------------------------
 $global:LogConfig = @{}
-$global:ActiveLogSessions = @{}   # Neu: mehrere aktive Sessions gleichzeitig
+$global:ActiveLogSessions = @{}   # Mehrere aktive Sessions gleichzeitig möglich
+
 
 # ------------------------------------------------------------
-# ⚙️ Funktion: Load-LogConfig
+# ⚙️ Funktion: Load-LogConfig (mit automatischer Hashtable-Umwandlung)
 # ------------------------------------------------------------
 function Load-LogConfig {
     try {
@@ -37,9 +38,9 @@ function Load-LogConfig {
 
         $configPath = Join-Path $configFolder "Log_Config.json"
 
-        # Defaultwerte
+        # Standardwerte definieren
         $defaultConfig = [ordered]@{
-            Version              = "CFG_V1.1.0"
+            Version              = "CFG_V1.1.1"
             MaxLogsPerModule     = 10
             MaxAgeDays           = 14
             RotationMode         = "Both"   # "Count", "Age", "Both"
@@ -52,6 +53,7 @@ function Load-LogConfig {
             SessionHeaderTemplate= "Neue Log-Session für {Module} gestartet um {Timestamp}"
         }
 
+        # Wenn keine Config vorhanden → neue schreiben
         if (-not (Test-Path $configPath)) {
             $defaultConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8
             Write-Host "🆕 Log_Config.json erstellt unter $configPath" -ForegroundColor Cyan
@@ -59,15 +61,25 @@ function Load-LogConfig {
             return
         }
 
+        # Vorhandene Config laden
         $loaded = Get-Content -Path $configPath -Raw | ConvertFrom-Json
-        $global:LogConfig = $loaded
-        Write-Host "✅ Log_Config.json geladen aus $configPath" -ForegroundColor Green
+
+        # 🔹 PSCustomObject → Hashtable konvertieren
+        $hashConfig = @{}
+        foreach ($prop in $loaded.PSObject.Properties) {
+            $hashConfig[$prop.Name] = $prop.Value
+        }
+
+        # Konvertierte Config speichern
+        $global:LogConfig = $hashConfig
+        Write-Host "✅ Log_Config.json geladen und in Hashtable umgewandelt." -ForegroundColor Green
     }
     catch {
         Write-Host "❌ Fehler beim Laden der Log_Config.json: $_" -ForegroundColor Red
         $global:LogConfig = $defaultConfig
     }
 }
+
 
 # ------------------------------------------------------------
 # 🚀 Funktion: Initialize-LogSession (Multi-Session)
@@ -118,6 +130,7 @@ function Initialize-LogSession {
     }
 }
 
+
 # ------------------------------------------------------------
 # ✍️ Funktion: Write-FrameworkLog (Multi-Session)
 # ------------------------------------------------------------
@@ -160,6 +173,7 @@ function Write-FrameworkLog {
     }
 }
 
+
 # ------------------------------------------------------------
 # 🧪 Funktion: Write-DebugLog
 # ------------------------------------------------------------
@@ -170,6 +184,7 @@ function Write-DebugLog {
         Write-FrameworkLog -Message $Message -Module $Module -Level "DEBUG"
     }
 }
+
 
 # ------------------------------------------------------------
 # ♻️ Funktion: Rotate-Logs
@@ -224,6 +239,7 @@ function Rotate-Logs {
         Write-Host "❌ Fehler bei Logrotation ($ModuleName): $_" -ForegroundColor Red
     }
 }
+
 
 # ------------------------------------------------------------
 # 🏁 Funktion: Close-LogSession (Multi-Session)
