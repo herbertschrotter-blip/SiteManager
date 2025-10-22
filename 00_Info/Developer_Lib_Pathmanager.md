@@ -5,19 +5,24 @@
 ## 📘 Überblick
 
 **Modulname:** `Lib_PathManager.ps1`
-**Aktuelle Version:** `LIB_V1.0.0`
+**Aktuelle Version:** `LIB_V1.2.3`
 **Zweck:** Zentrale Verwaltung der Pfadstruktur innerhalb des Master Setup Frameworks.
-Dient als universelle Schnittstelle für alle Module und Libraries, um konsistente Systempfade zu ermitteln.
+Dient als universelle Schnittstelle für alle Module und Libraries, um konsistente Systempfade zu ermitteln und Multi-System-Unterstützung zu bieten.
 
 ---
 
 ## 🧩 Kernfunktionen
 
-| Funktion             | Beschreibung                                                |
-| -------------------- | ----------------------------------------------------------- |
-| `Get-RootPath`       | Ermittelt den Projekt-Stammordner (Root).                   |
-| `Get-PathMap`        | Gibt ein objektbasiertes Mapping aller Hauptordner zurück.  |
-| `Test-PathStructure` | Prüft Existenz aller wichtigen Ordner und legt sie ggf. an. |
+| Funktion            | Beschreibung                                                                                 |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| `Get-ProjectRoot`   | Ermittelt den Hauptordner (Root) des Site Managers anhand der Standardstruktur.              |
+| `Get-PathMap`       | Gibt ein objektbasiertes Mapping aller Hauptordner zurück, dynamisch aus der Config geladen. |
+| `Get-PathConfig`    | Liefert den Pfad zum Config-Verzeichnis.                                                     |
+| `Get-PathLogs`      | Liefert den Pfad zum Log-Verzeichnis.                                                        |
+| `Get-PathBackup`    | Liefert den Pfad zum Backup-Verzeichnis.                                                     |
+| `Get-PathTemplates` | Liefert den Pfad zum Template-Verzeichnis.                                                   |
+| `Register-System`   | Registriert das aktuelle System (Benutzer + Computer) in der PathManager-Config.             |
+| `Get-ActiveSystem`  | Liest den aktuell aktiven Systeme-Eintrag aus der Config aus.                                |
 
 ---
 
@@ -25,7 +30,8 @@ Dient als universelle Schnittstelle für alle Module und Libraries, um konsisten
 
 ### 🔹 Grundprinzip
 
-Der PathManager arbeitet mit einer vordefinierten Standardstruktur und kann sowohl lokal (Single User) als auch innerhalb des Frameworks (Multi User) eingesetzt werden.
+Der PathManager arbeitet mit einer konfigurierbaren Ordnerstruktur, die in `01_Config/PathManager_Config.json` gespeichert wird.
+Beim Start erkennt er automatisch den aktiven Benutzer und Computer, legt ggf. neue Systeme an und verwaltet mehrere Root-Pfade.
 
 ### 🔹 Pfadstruktur (Beispiel)
 
@@ -38,18 +44,16 @@ Der PathManager arbeitet mit einer vordefinierten Standardstruktur und kann sowo
 └── 05_Backup\
 ```
 
-### 🔹 PathMap-Objekt
-
-Die Funktion `Get-PathMap` liefert ein PowerShell-Objekt mit allen relevanten Pfaden:
+### 🔹 Beispiel PathMap-Objekt
 
 ```powershell
 @{
     Root      = "D:\\...\\00_Site Manager"
-    Config    = "D:\\...\\00_Site Manager\\01_Config"
-    Templates = "D:\\...\\00_Site Manager\\02_Templates"
-    Scripts   = "D:\\...\\00_Site Manager\\03_Scripts"
-    Logs      = "D:\\...\\00_Site Manager\\04_Logs"
-    Backup    = "D:\\...\\00_Site Manager\\05_Backup"
+    Config    = "D:\\...\\01_Config"
+    Templates = "D:\\...\\02_Templates"
+    Scripts   = "D:\\...\\03_Scripts"
+    Logs      = "D:\\...\\04_Logs"
+    Backup    = "D:\\...\\05_Backup"
 }
 ```
 
@@ -57,81 +61,109 @@ Die Funktion `Get-PathMap` liefert ein PowerShell-Objekt mit allen relevanten Pf
 
 ## 🧠 Technische Details
 
-### 🔸 Root-Erkennung
+### 🔸 Multi-System-Erkennung
 
-```powershell
-$root = Split-Path (Split-Path $PSScriptRoot)
-```
+Der PathManager erstellt oder aktualisiert automatisch die Datei `PathManager_Config.json`.
 
-Ermittelt automatisch den übergeordneten Projektpfad – unabhängig vom Modulstandort.
-
-### 🔸 Ordnerprüfung
-
-```powershell
-foreach ($p in $map.Values) {
-    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
+```json
+{
+  "Version": "CFG_V1.2.0",
+  "Ordnerstruktur": {
+    "Config": "01_Config",
+    "Templates": "02_Templates",
+    "Scripts": "03_Scripts",
+    "Logs": "04_Logs",
+    "Backup": "05_Backup"
+  },
+  "Systeme": [
+    {
+      "Benutzer": "herbe",
+      "Computer": "DESKTOP-PC",
+      "Root": "D:\\OneDrive\\Dokumente\\...",
+      "LetzteErkennung": "2025-10-22 08:11:50"
+    }
+  ]
 }
 ```
 
-Garantiert, dass alle wichtigen Hauptordner existieren.
+### 🔸 Verbesserte Systemerkennung (seit V1.2.3)
 
-### 🔸 Rückgabestruktur
+* Erkennt bestehende Systeme korrekt anhand Benutzername & Computername.
+* Verhindert doppelte Einträge.
+* Aktualisiert nur den Zeitstempel bei erneutem Aufruf.
 
-`Get-PathMap` gibt ein HashTable-ähnliches PowerShell-Objekt zurück, das direkt in anderen Libs (z. B. Lib_Json) eingebunden werden kann.
+### 🔸 Geordnete JSON-Struktur
+
+Alle Config-Dateien werden mit `[ordered]@{}` erstellt, damit die Reihenfolge in der JSON-Datei stabil bleibt.
+
+### 🔸 Initialisierung
+
+Beim Laden der Library:
+
+* Wird `Get-ActiveSystem` automatisch aufgerufen.
+* Gibt Statusmeldungen aus („Aktives System erkannt“ oder „Fallback-Modus“).
 
 ---
 
 ## 🧰 Entwicklungs- und Teststrategie
 
-### 🔹 Testmodul: `Test-LibPathManager.ps1`
+### 🔹 Testmodul: `Test-PathManager.ps1`
 
-* **Version:** DEV_V1.0.0
-* **Zweck:** Überprüfung der Root-Erkennung und Pfadzuordnung.
+* **Version:** DEV_V1.1.0
+* **Zweck:** Vollständige Funktionsprüfung aller Endpunkte inkl. Systemerkennung & Pfadmapping.
 
 ### 🔹 Testszenarien
 
-| Test               | Beschreibung                          | Erwartung              |
-| ------------------ | ------------------------------------- | ---------------------- |
-| Root-Erkennung     | Ermittelt korrekten Hauptordner       | ✅ gültiger Root-Pfad   |
-| Pfadmap-Erstellung | Erstellt Objekt mit allen Hauptpfaden | ✅ vollständiges Objekt |
-| Ordnerprüfung      | Legt fehlende Ordner automatisch an   | ✅ keine Fehler         |
+| Test               | Beschreibung                             | Erwartung                          |
+| ------------------ | ---------------------------------------- | ---------------------------------- |
+| `Get-ProjectRoot`  | Root wird korrekt erkannt                | ✅ Gültiger Root-Pfad               |
+| `Get-PathMap`      | Gibt alle Hauptpfade zurück              | ✅ Vollständige Struktur            |
+| `Register-System`  | Neues System wird nur einmal registriert | ✅ Kein Duplikat                    |
+| `Get-ActiveSystem` | Liefert das aktuelle Systemobjekt        | ✅ Enthält Benutzer, Computer, Root |
 
 ### 🔹 Beispielausgabe
 
 ```
-📊 PFADÜBERSICHT:
-──────────────────────────────
-Root       : D:\...\00_Site Manager
-Config     : D:\...\01_Config
-Templates  : D:\...\02_Templates
-Scripts    : D:\...\03_Scripts
-Logs       : D:\...\04_Logs
-Backup     : D:\...\05_Backup
+📊 PFAD- UND SYSTEMÜBERSICHT:
+──────────────────────────────────────────────
+Root         : D:\...\00_Site Manager
+Config       : D:\...\01_Config
+Templates    : D:\...\02_Templates
+Scripts      : D:\...\03_Scripts
+Logs         : D:\...\04_Logs
+Backup       : D:\...\05_Backup
+──────────────────────────────────────────────
+Benutzer        : herbe
+Computer        : DESKTOP-PC
+Root            : D:\...\00_Site Manager
+LetzteErkennung : 2025-10-22 08:11:50
 ```
 
 ---
 
 ## 🚀 Geplante Erweiterungen
 
-| Version | Feature                      | Beschreibung                                                          |
-| ------- | ---------------------------- | --------------------------------------------------------------------- |
-| V1.1.0  | Dynamische Projektpfade      | Unterstützung für verschiedene Projektwurzeln (z. B. 00_Master_Setup) |
-| V1.2.0  | Multi-System-Erkennung       | Automatische Erkennung anhand Benutzername & Computername             |
-| V1.3.0  | Integration in Config-System | Übergabe an zentrale `System.json` für globale Pfadverwaltung         |
-| V1.5.0  | Projektwechsler              | Ermöglicht das Umschalten zwischen unterschiedlichen Root-Strukturen  |
+| Version | Feature                  | Beschreibung                                              |
+| ------- | ------------------------ | --------------------------------------------------------- |
+| V1.3.0  | Integration mit Lib_Json | Gemeinsame JSON-Lese-/Schreiblogik zur Vereinheitlichung  |
+| V1.4.0  | DebugMode-Unterstützung  | Ausgabe erweiterter Statusinfos bei Systemerkennung       |
+| V1.5.0  | Systemprofil-Export      | Ermöglicht Export aller bekannten Systeme als Tabelle     |
+| V2.0.0  | Projektwechsler          | Umschalten zwischen Root-Strukturen und Arbeitsumgebungen |
 
 ---
 
 ## 📦 Commit-Historie
 
-| Datum      | Version | Änderungen                                                           |
-| ---------- | ------- | -------------------------------------------------------------------- |
-| 2025-10-22 | V1.0.0  | Erstveröffentlichung – stabile Pfadermittlung und Verzeichnisprüfung |
+| Datum      | Version | Beschreibung                                                                   |
+| ---------- | ------- | ------------------------------------------------------------------------------ |
+| 2025-10-22 | V1.2.3  | Multi-System-Erkennung optimiert, geordnete JSON-Ausgabe, Duplikate verhindert |
+| 2025-10-22 | V1.2.2  | Reihenfolge der JSON-Felder fixiert (Version → Ordnerstruktur → Systeme)       |
+| 2025-10-22 | V1.2.0  | Multi-System-Unterstützung hinzugefügt                                         |
+| 2025-10-22 | V1.1.0  | Dynamische Ordnerstruktur aus Config eingebaut                                 |
+| 2025-10-22 | V1.0.0  | Erstveröffentlichung – stabile Pfadermittlung und Verzeichnisprüfung           |
 
 ---
 
-📘 **Status:** Stabil – empfohlen für alle Core-Libs (z. B. Lib_Json, Lib_Menu)
+📘 **Status:** Stabil – empfohlen für Core-Libs (z. B. Lib_Menu, Lib_Json)
 
-🧩 **Getestet mit:** `Test-LibPathManager.ps1` (DEV_V1.0.0)
-
----
+🧩 **Getestet mit:** `Test-PathManager.ps1 (DEV_V1.1.0)` und `Dev-TestMenu.ps1 (MOD_V1.1.1)`
