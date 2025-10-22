@@ -1,15 +1,15 @@
 # ============================================================
 # Modul: Test-PathManager.ps1
-# Version: DEV_V1.0.1
-# Zweck:   Testet alle Funktionen der Lib_PathManager.ps1
+# Version: DEV_V1.1.0
+# Zweck:   Testet alle Funktionen und Rückgaben der Lib_PathManager.ps1
 # Autor:   Herbert Schrotter
 # Datum:   22.10.2025
 # ============================================================
 # ManifestHint:
 #   ExportFunctions: Test-PathManager
-#   Description: Testmodul zur Überprüfung der Pfadfunktionen (Lib_PathManager.ps1)
+#   Description: Testmodul zur Überprüfung aller Endpunkte der Lib_PathManager.ps1 mit Ausgabe der Rückgabewerte
 #   Category: Dev
-#   Tags: Path, Test, Framework, Structure
+#   Tags: Path, Test, Framework, Structure, Output
 #   Dependencies: Lib_PathManager.ps1
 # ============================================================
 
@@ -28,11 +28,14 @@ if (-not (Test-Path $libPath)) {
 # 🧩 Hilfsfunktion: Show-Result
 # ------------------------------------------------------------
 function Show-Result {
-    param([string]$Test, [bool]$Success)
+    param([string]$Test, [bool]$Success, [string]$Output = "")
     if ($Success) {
         Write-Host ("✅ " + $Test) -ForegroundColor Green
     } else {
         Write-Host ("❌ " + $Test) -ForegroundColor Red
+    }
+    if ($Output -ne "") {
+        Write-Host ("   ↳ " + $Output) -ForegroundColor DarkGray
     }
 }
 
@@ -46,45 +49,56 @@ function Test-PathManager {
     Write-Host "============================================" -ForegroundColor Cyan
 
     try {
-        # 1️⃣ Projektroot ermitteln
+        # 1️⃣ Get-ProjectRoot
         $root = Get-ProjectRoot
         $okRoot = -not [string]::IsNullOrWhiteSpace($root)
-        Show-Result "Projekt-Root erkannt" $okRoot
-        if ($okRoot) { Write-Host "📁 Root: $root" -ForegroundColor Gray }
+        Show-Result "Get-ProjectRoot()" $okRoot $root
 
-        # 2️⃣ Pfadobjekt abrufen
-        $paths = $null
+        # 2️⃣ Get-PathMap
         try { $paths = Get-PathMap } catch {}
         $okMap = ($paths -ne $null -and $paths.Root -ne $null)
-        Show-Result "Pfadobjekt erstellt" $okMap
-
-        # 3️⃣ Einzelpfade prüfen
-        $okConfig    = Test-Path (Get-PathConfig)
-        $okLogs      = Test-Path (Get-PathLogs)
-        $okBackup    = Test-Path (Get-PathBackup)
-        $okTemplates = Test-Path (Get-PathTemplates)
-
-        Show-Result "Config-Ordner vorhanden" $okConfig
-        Show-Result "Logs-Ordner vorhanden" $okLogs
-        Show-Result "Backup-Ordner vorhanden" $okBackup
-        Show-Result "Templates-Ordner vorhanden" $okTemplates
-
-        # 4️⃣ Strukturvollständigkeit prüfen
-        $missing = @()
-        foreach ($key in $paths.PSObject.Properties.Name) {
-            $path = $paths.$key
-            if (-not (Test-Path $path)) { $missing += $key }
-        }
-        if ($missing.Count -eq 0) {
-            Show-Result "Alle Hauptordner vorhanden" $true
-        } else {
-            Show-Result "Fehlende Ordner erkannt" $false
-            Write-Host "⚠️ Fehlende: $($missing -join ', ')" -ForegroundColor Yellow
+        Show-Result "Get-PathMap()" $okMap
+        if ($okMap) {
+            foreach ($prop in $paths.PSObject.Properties) {
+                Write-Host ("   " + $prop.Name.PadRight(12) + ": " + $prop.Value) -ForegroundColor Gray
+            }
         }
 
-        # 5️⃣ Vertikale Pfadübersicht
+        # 3️⃣ Einzelpfade
+        $configPath    = Get-PathConfig
+        $logsPath      = Get-PathLogs
+        $backupPath    = Get-PathBackup
+        $templatesPath = Get-PathTemplates
+
+        Show-Result "Get-PathConfig()"    (Test-Path $configPath)    $configPath
+        Show-Result "Get-PathLogs()"      (Test-Path $logsPath)      $logsPath
+        Show-Result "Get-PathBackup()"    (Test-Path $backupPath)    $backupPath
+        Show-Result "Get-PathTemplates()" (Test-Path $templatesPath) $templatesPath
+
+        # 4️⃣ Systemfunktionen
         Write-Host "`n============================================" -ForegroundColor Cyan
-        Write-Host "📊 PFADÜBERSICHT:" -ForegroundColor Yellow
+        Write-Host "🧠 SYSTEMERKENNUNG:" -ForegroundColor Yellow
+        Write-Host "──────────────────────────────────────────────" -ForegroundColor DarkGray
+
+        $regResult = Register-System
+        $okReg = $regResult -ne $null
+        Show-Result "Register-System()" $okReg
+        if ($okReg) {
+            Write-Host "   ↳ Config aktualisiert: PathManager_Config.json" -ForegroundColor DarkGray
+        }
+
+        $activeSystem = Get-ActiveSystem
+        $okActive = $activeSystem -ne $null
+        Show-Result "Get-ActiveSystem()" $okActive
+        if ($okActive) {
+            foreach ($prop in $activeSystem.PSObject.Properties) {
+                Write-Host ("   " + $prop.Name.PadRight(15) + ": " + $prop.Value) -ForegroundColor Gray
+            }
+        }
+
+        # 5️⃣ Zusammenfassung
+        Write-Host "`n============================================" -ForegroundColor Cyan
+        Write-Host "📊 PFAD- UND SYSTEMÜBERSICHT:" -ForegroundColor Yellow
         Write-Host "──────────────────────────────────────────────" -ForegroundColor DarkGray
 
         foreach ($prop in $paths.PSObject.Properties) {
@@ -93,13 +107,19 @@ function Test-PathManager {
             Write-Host "$name : $value" -ForegroundColor Gray
         }
 
+        Write-Host "──────────────────────────────────────────────" -ForegroundColor DarkGray
+        foreach ($prop in $activeSystem.PSObject.Properties) {
+            $name  = $prop.Name.PadRight(15)
+            $value = $prop.Value
+            Write-Host "$name : $value" -ForegroundColor Gray
+        }
+
         Write-Host "============================================" -ForegroundColor Cyan
+        Write-Host "`n✅ Test abgeschlossen." -ForegroundColor Green
 
     } catch {
         Write-Host "❌ Unerwarteter Fehler: $($_.Exception.Message)" -ForegroundColor Red
     }
-
-    Write-Host "`n✅ Test abgeschlossen." -ForegroundColor Green
 }
 
 # ------------------------------------------------------------
