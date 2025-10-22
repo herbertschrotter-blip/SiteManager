@@ -102,6 +102,16 @@ Die Lib soll ein konsistentes Bedienverhalten sicherstellen und später auch als
 
 ---
 
+### 🧠 Erkennung durch SystemScanner
+
+Das Menümodul wird automatisch vom **Lib_SystemScanner** erkannt,  
+sobald es einen gültigen ManifestHint im Header besitzt.  
+Alle relevanten Metadaten (Version, Kategorie, Exportfunktionen)  
+werden automatisch in der Registry erfasst und stehen so  
+auch für Analyse und Dokumentation zur Verfügung.
+
+---
+
 ### 📁 Verzeichnisstruktur (nach Integration)
 
 ```

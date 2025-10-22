@@ -141,6 +141,15 @@ LetzteErkennung : 2025-10-22 08:11:50
 
 ---
 
+### 🔗 Verbindung zum SystemScanner
+
+Der **Lib_PathManager** wird vom **Lib_SystemScanner** als zentrale Core-Abhängigkeit  
+erkannt und automatisch in der Registry kategorisiert.  
+Jedes Modul, das Pfadinformationen nutzt, verweist intern auf diese Library.  
+Dadurch bleibt die Pfadstruktur im gesamten Framework konsistent.
+
+---
+
 ## 🚀 Geplante Erweiterungen
 
 | Version | Feature                  | Beschreibung                                              |

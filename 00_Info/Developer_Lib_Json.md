@@ -127,6 +127,15 @@ if (-not (Test-Path $defaultConfigPath)) {
 
 ---
 
+### ⚙️ Verwendung durch SystemScanner
+
+Der **Lib_SystemScanner** nutzt diese Library als Standard-JSON-Handler,  
+um die System-Registry (`Module_Registry.json`) zu lesen und zu schreiben.  
+Dadurch ist sichergestellt, dass alle Framework-Komponenten dieselbe  
+JSON-Formatierung, Kodierung und Fehlerbehandlung verwenden.
+
+---
+
 ## 🚀 Geplante Erweiterungen
 
 | Version | Feature              | Beschreibung                                         |

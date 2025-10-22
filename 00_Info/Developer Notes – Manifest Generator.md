@@ -11,6 +11,18 @@ Ziel ist es, eine einheitliche, automatisierte Modulverwaltung zu ermöglichen, 
 
 ---
 
+### 🔗 Integration mit Lib_SystemScanner
+
+Der Manifest Generator arbeitet nun eng mit dem **Lib_SystemScanner** zusammen.  
+Alle ManifestHint-Blöcke, die in Libraries und Modulen hinterlegt sind,  
+werden automatisch durch den SystemScanner erkannt, ausgelesen und  
+in die zentrale Registry (`00_Info\Module_Registry.json`) übernommen.
+
+Dadurch entsteht eine einheitliche Informationsbasis für alle Module,  
+ohne dass separate Manifestdateien erforderlich sind.
+
+---
+
 ## 🎯 Ziele und Aufgaben
 
 | Bereich                      | Beschreibung                                                                                                                                                         |
