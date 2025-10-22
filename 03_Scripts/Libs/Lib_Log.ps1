@@ -1,24 +1,24 @@
 # ============================================================
-# 🧩 LIB_LOG – Framework Logging System
-# Version: LIB_V1.0.0
-# Zweck:   Zentrales Logging-System für alle Framework-Module.
+# 🧩 LIB_LOG – Framework Logging System (Multi-Session)
+# Version: LIB_V1.1.0
+# Zweck:   Zentrales Logging-System für alle Framework-Module mit paralleler Sitzungsunterstützung
 # Autor:   Herbert Schrotter
-# Datum:   22.10.2025
+# Datum:   23.10.2025
 # ============================================================
 
 # ManifestHint:
 #   ExportFunctions: Load-LogConfig, Initialize-LogSession, Write-FrameworkLog, Write-DebugLog, Rotate-Logs, Close-LogSession
-#   Description: Zentrales Framework-Logging mit Sitzungsdateien, Logrotation und Config-Autoerstellung
+#   Description: Zentrales Framework-Logging mit Multi-Session-Support, Logrotation und Config-Autoerstellung
 #   Category: Core
-#   Tags: Logging, Framework, Rotation, Config
+#   Tags: Logging, Framework, Rotation, Config, MultiSession
 #   Dependencies: Lib_PathManager
+# ============================================================
 
 # ------------------------------------------------------------
 # 🧠 Globale Variablen
 # ------------------------------------------------------------
 $global:LogConfig = @{}
-$global:CurrentLogFile = $null
-$global:CurrentLogSessionStart = Get-Date
+$global:ActiveLogSessions = @{}   # Neu: mehrere aktive Sessions gleichzeitig
 
 # ------------------------------------------------------------
 # ⚙️ Funktion: Load-LogConfig
@@ -37,22 +37,21 @@ function Load-LogConfig {
 
         $configPath = Join-Path $configFolder "Log_Config.json"
 
-        # Defaultwerte definieren
+        # Defaultwerte
         $defaultConfig = [ordered]@{
-            Version             = "CFG_V1.0.0"
-            MaxLogsPerModule    = 10
-            MaxAgeDays          = 14
-            RotationMode        = "Both"   # "Count", "Age" oder "Both"
-            EnableDebug         = $true
-            EnableConsoleOutput = $true
-            DateFormat          = "yyyy-MM-dd_HHmm_ss"
-            LogLevels           = @("INFO","WARN","ERROR","DEBUG")
-            LogStructure        = "[{Timestamp}] [{Level}] [{Module}] {Message}"
+            Version              = "CFG_V1.1.0"
+            MaxLogsPerModule     = 10
+            MaxAgeDays           = 14
+            RotationMode         = "Both"   # "Count", "Age", "Both"
+            EnableDebug          = $true
+            EnableConsoleOutput  = $true
+            DateFormat           = "yyyy-MM-dd_HHmm_ss"
+            LogLevels            = @("INFO","WARN","ERROR","DEBUG")
+            LogStructure         = "[{Timestamp}] [{Level}] [{Module}] {Message}"
             IncludeSessionHeader = $true
-            SessionHeaderTemplate = "Neue Log-Session für {Module} gestartet um {Timestamp}"
+            SessionHeaderTemplate= "Neue Log-Session für {Module} gestartet um {Timestamp}"
         }
 
-        # Falls Config fehlt → neue anlegen
         if (-not (Test-Path $configPath)) {
             $defaultConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8
             Write-Host "🆕 Log_Config.json erstellt unter $configPath" -ForegroundColor Cyan
@@ -60,7 +59,6 @@ function Load-LogConfig {
             return
         }
 
-        # Falls Config vorhanden → einlesen
         $loaded = Get-Content -Path $configPath -Raw | ConvertFrom-Json
         $global:LogConfig = $loaded
         Write-Host "✅ Log_Config.json geladen aus $configPath" -ForegroundColor Green
@@ -72,7 +70,7 @@ function Load-LogConfig {
 }
 
 # ------------------------------------------------------------
-# 🚀 Funktion: Initialize-LogSession
+# 🚀 Funktion: Initialize-LogSession (Multi-Session)
 # ------------------------------------------------------------
 function Initialize-LogSession {
     param([string]$ModuleName = "Core")
@@ -88,22 +86,25 @@ function Initialize-LogSession {
             New-Item -Path $logFolder -ItemType Directory | Out-Null
         }
 
-        # Logrotation ausführen, bevor neue Session startet
+        # Logrotation pro Modul
         Rotate-Logs -ModuleName $ModuleName -LogConfig $global:LogConfig
 
-        # Neue Logdatei mit Zeitstempel anlegen
+        # Neue Logdatei
         $timestamp = Get-Date -Format $global:LogConfig.DateFormat
         $logFile = Join-Path $logFolder "$($ModuleName)_Log_$timestamp.txt"
-        $global:CurrentLogFile = $logFile
-        $global:CurrentLogSessionStart = Get-Date
 
-        $header = $global:LogConfig.SessionHeaderTemplate `
-                    -replace "{Module}", $ModuleName `
-                    -replace "{Timestamp}", (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+        $sessionHeader = $global:LogConfig.SessionHeaderTemplate `
+            -replace "{Module}", $ModuleName `
+            -replace "{Timestamp}", (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
         if ($global:LogConfig.IncludeSessionHeader) {
-            $headerLine = "[INIT] $header"
-            Out-File -FilePath $logFile -Encoding utf8 -InputObject $headerLine
+            "[INIT] $sessionHeader" | Out-File -FilePath $logFile -Encoding utf8
+        }
+
+        # Neue Session registrieren
+        $global:ActiveLogSessions[$ModuleName] = @{
+            File   = $logFile
+            Start  = Get-Date
         }
 
         if ($global:LogConfig.EnableConsoleOutput) {
@@ -118,7 +119,7 @@ function Initialize-LogSession {
 }
 
 # ------------------------------------------------------------
-# ✍️ Funktion: Write-FrameworkLog
+# ✍️ Funktion: Write-FrameworkLog (Multi-Session)
 # ------------------------------------------------------------
 function Write-FrameworkLog {
     param(
@@ -136,8 +137,13 @@ function Write-FrameworkLog {
             -replace "{Module}", $Module `
             -replace "{Message}", $Message
 
-        if ($global:CurrentLogFile) {
-            Add-Content -Path $global:CurrentLogFile -Value $entry
+        if ($global:ActiveLogSessions.ContainsKey($Module)) {
+            $file = $global:ActiveLogSessions[$Module].File
+            Add-Content -Path $file -Value $entry
+        } else {
+            # Fallback, wenn keine Session aktiv ist
+            $fallback = Join-Path (Join-Path $PSScriptRoot "..\..\04_Logs") "Fallback_Log.txt"
+            Add-Content -Path $fallback -Value $entry
         }
 
         if ($global:LogConfig.EnableConsoleOutput) {
@@ -150,7 +156,7 @@ function Write-FrameworkLog {
         }
     }
     catch {
-        Write-Host "❌ Fehler beim Schreiben ins Log: $_" -ForegroundColor Red
+        Write-Host "❌ Fehler beim Schreiben ins Log ($Module): $_" -ForegroundColor Red
     }
 }
 
@@ -220,24 +226,27 @@ function Rotate-Logs {
 }
 
 # ------------------------------------------------------------
-# 🏁 Funktion: Close-LogSession
+# 🏁 Funktion: Close-LogSession (Multi-Session)
 # ------------------------------------------------------------
 function Close-LogSession {
     param([string]$ModuleName = "Core")
 
     try {
-        if (-not $global:CurrentLogFile) { return }
+        if (-not $global:ActiveLogSessions.ContainsKey($ModuleName)) { return }
 
+        $session = $global:ActiveLogSessions[$ModuleName]
         $endTime = Get-Date
-        $duration = New-TimeSpan -Start $global:CurrentLogSessionStart -End $endTime
+        $duration = New-TimeSpan -Start $session.Start -End $endTime
         $summary = "[CLOSE] Sitzung beendet – Dauer: {0:hh\:mm\:ss}" -f $duration
 
-        Add-Content -Path $global:CurrentLogFile -Value $summary
+        Add-Content -Path $session.File -Value $summary
         if ($global:LogConfig.EnableConsoleOutput) {
             Write-Host $summary -ForegroundColor Green
         }
+
+        $global:ActiveLogSessions.Remove($ModuleName)
     }
     catch {
-        Write-Host "❌ Fehler beim Schließen des Logs: $_" -ForegroundColor Red
+        Write-Host "❌ Fehler beim Schließen des Logs ($ModuleName): $_" -ForegroundColor Red
     }
 }
