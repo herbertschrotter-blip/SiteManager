@@ -102,9 +102,9 @@ function Register-System {
         $computer = $env:COMPUTERNAME
         $root     = $pathMap.Root
 
-        $defaultConfig = @{
+            $defaultConfig = [ordered]@{
             Version        = "CFG_V1.2.0"
-            Ordnerstruktur = @{
+            Ordnerstruktur = [ordered]@{
                 Config    = "01_Config"
                 Templates = "02_Templates"
                 Scripts   = "03_Scripts"
@@ -113,6 +113,9 @@ function Register-System {
             }
             Systeme = @()
         }
+
+        $defaultConfig | ConvertTo-Json -Depth 4 | Out-File -FilePath $configPath -Encoding utf8 -Force
+
 
         if (-not (Test-Path $configPath)) {
             Write-Host "⚙️  PathManager_Config.json nicht gefunden – wird neu erstellt." -ForegroundColor Yellow
