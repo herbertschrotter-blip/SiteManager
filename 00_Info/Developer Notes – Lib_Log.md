@@ -36,11 +36,12 @@
 
 ```text
 ManifestHint:
-  ExportFunctions: Load-LogConfig, Initialize-LogSession, Write-FrameworkLog, Write-DebugLog, Rotate-Logs, Close-LogSession
-  Description: Zentrales Framework-Logging mit Multi-Session-Support, Logrotation und Config-Autoerstellung
+  ExportFunctions: Load-LogConfig, Initialize-LogSession, Write-FrameworkLog, Write-DebugLog, Rotate-Logs, Close-LogSession, Lock-LogSystem, Unlock-LogSystem
+  Description: Framework-Logging mit exklusivem Modulzugriff (Lock-System) und Logrotation
   Category: Core
-  Tags: Logging, Framework, Rotation, Config, MultiSession
+  Tags: Logging, Framework, Rotation, Config, Lock, SiteManager
   Dependencies: Lib_PathManager
+
 ```
 
 ---
@@ -110,9 +111,29 @@ ManifestHint:
 
 * **Zweck:** Beendet die **Session eines Moduls**, schreibt Dauer (`[CLOSE]`) und entfernt die Session aus `ActiveLogSessions`.
 
+### 5.7 `Lock-LogSystem -ModuleName <String>`
+- **Zweck:** Reserviert das Logsystem exklusiv für ein Modul (z. B. `MenuSystem`).
+- **Rückgabe:** `$true`, wenn erfolgreich; `$false`, wenn bereits ein anderes Modul schreibt.
+- **Konsolenausgabe:**
+  - `🔒 LogSystem exklusiv gesperrt durch: <Module>`
+  - `⚠️ Logging aktuell gesperrt durch Modul: <Name>`
+
+### 5.8 `Unlock-LogSystem -ModuleName <String>`
+- **Zweck:** Gibt das Logsystem wieder frei.
+- **Wird automatisch** von `Close-LogSession` aufgerufen.
+- Kann manuell genutzt werden, wenn ein Modul unerwartet beendet wird.
+
 ---
 
-## 6) Multi-Session-Design (ab LIB_V1.1.x)
+## 6) Multi-Session & Lock-Design (ab LIB_V1.2.x)
+
+🆕 Ab Version LIB_V1.2.x verfügt Lib_Log zusätzlich über ein **Lock-System**, das exklusiven Schreibzugriff erzwingt.
+
+- Nur **ein Modul** darf aktiv loggen.
+- Wenn ein anderes Modul (`MenuSystem`, `DevLogSystem` etc.) eine Log-Session startet, während das System gesperrt ist, wird es abgewiesen.
+- Die Sperre wird automatisch durch `Close-LogSession` aufgehoben.
+- Dadurch sind keine Fallback- oder Überschneidungslogs mehr möglich.
+
 
 **Problem (früher):** Eine globale Datei/Session führte bei gleichzeitiger Nutzung (z. B. Menü + Tool) zu Überschreibungen/Konflikten.
 
@@ -127,6 +148,12 @@ ManifestHint:
 
 * `Lib_Menu.ps1` kann mit `ModuleName = "MenuSystem"` loggen, während `Dev-LogSystem` parallel schreibt – **ohne Konflikte**.
 * Rotation und Retention gelten **pro Modul**.
+
+**Ablauf mit Lock-System:**
+
+1. `MenuSystem` startet → `Lock-LogSystem` aktiviert.
+2. `DevLogSystem` versucht zu starten → wird blockiert.
+3. Nach `Close-LogSession` wird Lock automatisch freigegeben.
 
 ---
 
@@ -176,6 +203,25 @@ Close-LogSession -ModuleName "DevLogSystem"
 
 **Ergebnis (Beispiel):**
 
+### 7.4 Exklusiver Zugriff (Lock-System, ab LIB_V1.2.0)
+
+```powershell
+Load-LogConfig
+
+# Menü startet zuerst
+Initialize-LogSession -ModuleName "MenuSystem"
+Write-FrameworkLog -Module "MenuSystem" -Message "Menü aktiv"
+
+# Dev-Tool versucht zu starten (parallel)
+Initialize-LogSession -ModuleName "DevLogSystem"
+# → Ausgabe:
+# ⚠️ Logging aktuell gesperrt durch Modul: MenuSystem
+# ❌ LogSession für DevLogSystem nicht gestartet – System belegt.
+
+# Menü beendet
+Close-LogSession -ModuleName "MenuSystem"
+# → 🔓 LogSystem-Freigabe durch: MenuSystem
+
 ```
 04_Logs/
 ├── MenuSystem_Log_2025-10-23_1530_12.txt
@@ -207,6 +253,8 @@ Close-LogSession -ModuleName "DevLogSystem"
 * [ ] `Close-LogSession` schreibt `[CLOSE]` und entfernt Eintrag aus `ActiveLogSessions`.
 * [ ] Konsolenausgabe abschaltbar (`EnableConsoleOutput = false`).
 * [ ] Debug-Ausgaben nur bei `EnableDebug = true`.
+- [ ] Nur ein Modul darf gleichzeitig loggen (Lock-System aktiv).
+- [ ] `Close-LogSession` gibt den Lock automatisch wieder frei.
 
 ---
 
@@ -215,10 +263,22 @@ Close-LogSession -ModuleName "DevLogSystem"
 * **Kein `Initialize-LogSession` aufgerufen:** Einträge landen im `Fallback_Log.txt`.
 * **Falscher Modulname beim Schreiben:** Einträge erscheinen (scheinbar) nicht → Modulname prüfen.
 * **Ältere Config ohne Sekunden:** Es kann zu kollidierenden Dateinamen kommen, wenn Sessions innerhalb derselben Minute gestartet werden → `DateFormat` aktualisieren.
+- **Lock nicht freigegeben:** Wenn ein Modul abstürzt, bleibt das System gesperrt → manuell mit `Unlock-LogSystem -ModuleName "<Name>"` aufheben.
+- **Mehrere gleichzeitige Initialisierungen:** Nur das erste Modul erhält Zugriff; alle anderen werden geblockt.
+
 
 ---
 
 ## 11) Changelog
+
+### LIB_V1.2.0 – 23.10.2025
+* **Neu:** Exklusives **Lock-System** für das Logging.
+* **Ziel:** Nur ein Modul darf gleichzeitig schreiben (Single Active Log).
+* **Neue Funktionen:** `Lock-LogSystem`, `Unlock-LogSystem`.
+* **Initialize-LogSession:** Prüft Lock-Status und blockiert, wenn belegt.
+* **Close-LogSession:** Gibt Lock automatisch frei.
+* **Vorteil:** Keine Fallbacks oder Überschneidungen mehr.
+
 
 ### LIB_V1.1.1 – 23.10.2025
 
@@ -239,11 +299,13 @@ Close-LogSession -ModuleName "DevLogSystem"
 ## 12) Commit-Vorlage
 
 ```
-🧠 DOC – Developer Notes: Lib_Log aktualisiert
-• Multi-Session-Design dokumentiert
-• Hashtable-Konvertierung in Load-LogConfig ergänzt
-• Beispiele und Checkliste hinzugefügt
-• Changelog auf V1.1.1 erweitert
+🧠 DOC – Developer Notes: Lib_Log aktualisiert (V1.3.2)
+• Lock-System dokumentiert (Single Active Log Mode)
+• Neue Funktionen: Lock-LogSystem, Unlock-LogSystem
+• Multi-Session-Abschnitt zu „Multi-Session & Lock-Design“ erweitert
+• Beispiele und Checkliste ergänzt
+• Changelog auf LIB_V1.2.0 aktualisiert
+
 ```
 
 ---
