@@ -1,6 +1,6 @@
 # ============================================================
 # Library: Lib_PathManager.ps1
-# Version: LIB_V1.2.0
+# Version: LIB_V1.2.3
 # Zweck:   Dynamischer Pfadmanager mit Multi-System-Erkennung und konfigurierbarer Ordnerstruktur
 # Autor:   Herbert Schrotter
 # Datum:   22.10.2025
@@ -33,6 +33,7 @@ function Get-ProjectRoot {
         return $null
     }
 }
+
 
 # ------------------------------------------------------------
 # 📁 Funktion: Get-PathMap (Dynamic Mode)
@@ -82,16 +83,18 @@ function Get-PathMap {
     }
 }
 
+
 # ------------------------------------------------------------
-# 🔧 Hilfsfunktionen
+# 🔧 Hilfsfunktionen (Kurzaufrufe)
 # ------------------------------------------------------------
 function Get-PathConfig    { (Get-PathMap).Config }
 function Get-PathLogs      { (Get-PathMap).Logs }
 function Get-PathBackup    { (Get-PathMap).Backup }
 function Get-PathTemplates { (Get-PathMap).Templates }
 
+
 # ------------------------------------------------------------
-# 🧠 Multi-System-Erkennung
+# 🧠 Multi-System-Erkennung (mit Fix)
 # ------------------------------------------------------------
 function Register-System {
     try {
@@ -102,7 +105,8 @@ function Register-System {
         $computer = $env:COMPUTERNAME
         $root     = $pathMap.Root
 
-            $defaultConfig = [ordered]@{
+        # Neue Config-Struktur mit [ordered] für korrekte Reihenfolge
+        $defaultConfig = [ordered]@{
             Version        = "CFG_V1.2.0"
             Ordnerstruktur = [ordered]@{
                 Config    = "01_Config"
@@ -114,9 +118,7 @@ function Register-System {
             Systeme = @()
         }
 
-        $defaultConfig | ConvertTo-Json -Depth 4 | Out-File -FilePath $configPath -Encoding utf8 -Force
-
-
+        # Datei anlegen, falls nicht vorhanden
         if (-not (Test-Path $configPath)) {
             Write-Host "⚙️  PathManager_Config.json nicht gefunden – wird neu erstellt." -ForegroundColor Yellow
             $defaultConfig | ConvertTo-Json -Depth 4 | Out-File -FilePath $configPath -Encoding utf8 -Force
@@ -125,7 +127,8 @@ function Register-System {
         $config = Get-Content $configPath -Raw | ConvertFrom-Json
         $exists = $config.Systeme | Where-Object { $_.Benutzer -eq $user -and $_.Computer -eq $computer }
 
-        if (-not $exists) {
+        # ✅ Korrektur: nur hinzufügen, wenn kein Eintrag existiert
+        if ($null -eq $exists -or $exists.Count -eq 0) {
             Write-Host "➕ Neues System erkannt: $user@$computer" -ForegroundColor Green
             $newEntry = [PSCustomObject]@{
                 Benutzer        = $user
@@ -139,6 +142,7 @@ function Register-System {
         else {
             $exists.LetzteErkennung = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             $config | ConvertTo-Json -Depth 4 | Out-File -FilePath $configPath -Encoding utf8 -Force
+            Write-Host "ℹ️ System bereits registriert → Zeitstempel aktualisiert." -ForegroundColor DarkGray
         }
 
         return $config
@@ -149,6 +153,10 @@ function Register-System {
     }
 }
 
+
+# ------------------------------------------------------------
+# 🔍 Funktion: Get-ActiveSystem
+# ------------------------------------------------------------
 function Get-ActiveSystem {
     try {
         $pathMap    = Get-PathMap
@@ -160,7 +168,7 @@ function Get-ActiveSystem {
         $computer = $env:COMPUTERNAME
 
         $system = $config.Systeme | Where-Object { $_.Benutzer -eq $user -and $_.Computer -eq $computer }
-        if (-not $system) {
+        if ($null -eq $system -or $system.Count -eq 0) {
             Register-System | Out-Null
             $config = Get-Content $configPath -Raw | ConvertFrom-Json
             $system = $config.Systeme | Where-Object { $_.Benutzer -eq $user -and $_.Computer -eq $computer }
@@ -172,6 +180,7 @@ function Get-ActiveSystem {
         return $null
     }
 }
+
 
 # ------------------------------------------------------------
 # 🧩 Initialisierung beim Laden
