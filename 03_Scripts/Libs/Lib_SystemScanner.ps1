@@ -86,10 +86,19 @@ function Invoke-SystemScan {
             try {
                 $content = Get-Content -Path $file.FullName -ErrorAction Stop
 
-                # ManifestHint-Block suchen
-                $hintStart = ($content | Select-String "# 🧩 ManifestHint:").LineNumber
-                if ($hintStart) {
-                    $block = $content[$hintStart..($hintStart+10)] | ForEach-Object { $_.Trim() }
+                # ManifestHint-Block suchen (Unicode-tolerant & variabel lang)
+                $hintIndex = ($content | Select-String -Pattern "#\s*ManifestHint" -SimpleMatch).LineNumber
+
+                if ($hintIndex -and $hintIndex.Count -ge 1) {
+                    $startLine = $hintIndex[0]
+                    # Alle folgenden Zeilen bis zu einer Trennlinie oder leerer Zeile lesen
+                    $block = @()
+                    for ($i = $startLine; $i -lt $content.Count; $i++) {
+                        $line = $content[$i].Trim()
+                        if ($line -match "^#\s*={5,}" -or $line -eq "") { break }
+                        $block += $line
+                    }
+
                     foreach ($line in $block) {
                         if ($line -match "ExportFunctions:\s*(.*)")   { $info.ExportFunctions = $matches[1].Trim() -split ',' }
                         elseif ($line -match "Description:\s*(.*)")   { $info.Description     = $matches[1].Trim() }
@@ -100,6 +109,8 @@ function Invoke-SystemScan {
                 }
                 else {
                     $info.Status = "⚠️ Kein ManifestHint"
+                }
+
                 }
 
                 # Version aus Header lesen
