@@ -1,17 +1,17 @@
 # ============================================================
 # 🧩 Library: Lib_SystemScanner.ps1
-# Version: LIB_V1.2.0
+# Version: LIB_V1.3.2
 # Zweck:   Scannt alle Libraries & Module, liest ManifestHints aus,
-#          erstellt Registry & Log, inklusive Beziehungs- und Statistikdaten
+#          erstellt Registry & Log, inkl. Gruppenzuordnung & Statistikdaten
 # Autor:   Herbert Schrotter
 # Datum:   22.10.2025
 # ============================================================
 # 🧩 ManifestHint:
 #   ExportFunctions: Invoke-SystemScan
 #   Description: Scannt alle Libraries und Module des SiteManagers,
-#                 liest ManifestHints aus, erstellt Registry & Log inkl. Abhängigkeitsnetz.
+#                 liest ManifestHints aus, erstellt Registry & Log inkl. Gruppen und Abhängigkeitsnetz.
 #   Category: Utility
-#   Tags: Scan, Registry, Manifest, Log, Framework, Relations
+#   Tags: Scan, Registry, Manifest, Log, Framework, Relations, Grouping
 #   Dependencies: Lib_PathManager, Lib_Json
 # ============================================================
 
@@ -57,23 +57,51 @@ function Invoke-SystemScan {
         if (!(Test-Path $paths.Logs)) { New-Item -ItemType Directory -Path $paths.Logs -Force | Out-Null }
 
         # ------------------------------------------------------------
-        # 🧠 SCAN STARTEN
+        # 🧠 SCAN STARTEN (rekursiv mit PathManager-Unterordnern)
         # ------------------------------------------------------------
-        $files = Get-ChildItem -Path $paths.Scripts -Recurse -Include "Lib_*.ps1","Mod_*.ps1","Core_*.ps1" -File |
-                 Sort-Object FullName
-        if ($files.Count -eq 0) {
-            Write-Host "⚠️ Keine Module oder Libraries gefunden." -ForegroundColor Yellow
-            return
+        $searchPatterns = @("Lib_*.ps1", "Mod_*.ps1", "Core_*.ps1", "Test-*.ps1", "Dev-*.ps1")
+        $files = @()
+
+        try {
+            if (Get-Command Get-PathSubDirs -ErrorAction SilentlyContinue) {
+                Write-Host "📂 Sammle Unterordner über PathManager..." -ForegroundColor DarkGray
+                $subDirs = Get-PathSubDirs -BasePath $paths.Scripts
+                if (-not $subDirs -or $subDirs.Count -eq 0) {
+                    Write-Host "⚠️ Keine Unterordner gefunden – verwende Standard-Scan." -ForegroundColor Yellow
+                    $subDirs = @($paths.Scripts)
+                }
+            }
+            else {
+                Write-Host "⚠️ Get-PathSubDirs nicht verfügbar – verwende Standard-Scan." -ForegroundColor Yellow
+                $subDirs = @($paths.Scripts)
+            }
+
+            foreach ($dir in $subDirs) {
+                foreach ($pattern in $searchPatterns) {
+                    $found = Get-ChildItem -Path $dir -Filter $pattern -File -ErrorAction SilentlyContinue
+                    if ($found) { $files += $found }
+                }
+            }
+
+            $files = $files | Sort-Object FullName -Unique
+            Write-Host ("📄 {0} Dateien für Analyse vorbereitet." -f $files.Count) -ForegroundColor Green
+        }
+        catch {
+            Write-Host "❌ Fehler beim Sammeln der Unterordner: $($_.Exception.Message)" -ForegroundColor Red
         }
 
+        # ------------------------------------------------------------
+        # 🧩 DATEIEN ANALYSIEREN
+        # ------------------------------------------------------------
         $startTime = Get-Date
         Add-Content -Path $logPath -Value "`n[$startTime] 🧩 Starte neuen SystemScan ($($files.Count) Dateien gefunden)"
-
         $scanResults = @()
+
         foreach ($file in $files) {
             $info = [ordered]@{
                 Name            = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
                 Path            = $file.FullName
+                Group           = "-"
                 Version         = "-"
                 Category        = "-"
                 Description     = "-"
@@ -86,7 +114,7 @@ function Invoke-SystemScan {
             try {
                 $content = Get-Content -Path $file.FullName -ErrorAction Stop
 
-                # 🧩 ManifestHint-Block suchen (Unicode-tolerant & variabel lang)
+                # 🧩 ManifestHint-Block finden
                 $hintIndex = ($content | Select-String -Pattern "ManifestHint" -SimpleMatch).LineNumber
                 if ($hintIndex -and $hintIndex.Count -ge 1) {
                     $startLine = $hintIndex[0]
@@ -115,6 +143,15 @@ function Invoke-SystemScan {
                     $info.Version = ($verLine.ToString() -split "Version:")[1].Trim()
                 }
 
+                # 🧩 Gruppenzuordnung anhand des Dateinamens
+                $name = $info.Name
+                $info.Group = if ($name -like "Lib_*") { "Libraries" }
+                              elseif ($name -like "Mod_*") { "Modules" }
+                              elseif ($name -like "Core_*" -or $name -like "Start_*") { "Core" }
+                              elseif ($name -like "Test-*") { "Tests" }
+                              elseif ($name -like "Dev-*") { "DevTools" }
+                              else { "Other" }
+
                 $scanResults += [PSCustomObject]$info
             }
             catch {
@@ -129,6 +166,7 @@ function Invoke-SystemScan {
         $registryData = @{}
         foreach ($item in $scanResults) {
             $registryData[$item.Name] = @{
+                Group           = $item.Group
                 Version         = $item.Version
                 Category        = $item.Category
                 Description     = $item.Description
@@ -140,7 +178,7 @@ function Invoke-SystemScan {
             }
         }
 
-        # UsedBy-Felder aufbauen
+        # UsedBy aufbauen
         foreach ($key in $registryData.Keys) {
             $deps = $registryData[$key].Dependencies
             foreach ($dep in $deps) {
@@ -154,15 +192,13 @@ function Invoke-SystemScan {
         # ------------------------------------------------------------
         # 📊 STATISTIK-BLOCK
         # ------------------------------------------------------------
-        $totalLibs  = ($registryData.Keys | Where-Object { $_ -like "Lib_*" }).Count
-        $totalMods  = ($registryData.Keys | Where-Object { $_ -like "Mod_*" }).Count
-        $totalCores = ($registryData.Keys | Where-Object { $_ -like "Start_*" -or $_ -like "Core_*" }).Count
-
         $stats = [ordered]@{
             "GesamtModule"     = $registryData.Count
-            "Libraries"        = $totalLibs
-            "Module"           = $totalMods
-            "CoreModule"       = $totalCores
+            "Libraries"        = ($scanResults | Where-Object { $_.Group -eq "Libraries" }).Count
+            "Modules"          = ($scanResults | Where-Object { $_.Group -eq "Modules" }).Count
+            "CoreModule"       = ($scanResults | Where-Object { $_.Group -eq "Core" }).Count
+            "Tests"            = ($scanResults | Where-Object { $_.Group -eq "Tests" }).Count
+            "DevTools"         = ($scanResults | Where-Object { $_.Group -eq "DevTools" }).Count
             "MitManifestHint"  = ($scanResults | Where-Object { $_.Status -eq 'OK' }).Count
             "OhneManifestHint" = ($scanResults | Where-Object { $_.Status -match 'ManifestHint' }).Count
             "Fehlerhafte"      = ($scanResults | Where-Object { $_.Status -match 'Fehler' }).Count
@@ -200,9 +236,11 @@ function Invoke-SystemScan {
         Write-Host ("Ohne ManifestHint : {0}" -f $stats.OhneManifestHint)
         Write-Host ("Fehlerhafte Dateien: {0}" -f $stats.Fehlerhafte)
         Write-Host "─────────────────────────────────────────────"
-        Write-Host ("Libraries         : {0}" -f $totalLibs)
-        Write-Host ("Module            : {0}" -f $totalMods)
-        Write-Host ("Core-Module       : {0}" -f $totalCores)
+        Write-Host ("Libraries         : {0}" -f $stats.Libraries)
+        Write-Host ("Modules           : {0}" -f $stats.Modules)
+        Write-Host ("Tests             : {0}" -f $stats.Tests)
+        Write-Host ("DevTools          : {0}" -f $stats.DevTools)
+        Write-Host ("Core-Module       : {0}" -f $stats.CoreModule)
         Write-Host ("Letzter Scan      : {0}" -f $stats.LetzterScan)
         Write-Host "─────────────────────────────────────────────"
         Write-Host "🪵 Log-Datei: $logPath" -ForegroundColor DarkGray
