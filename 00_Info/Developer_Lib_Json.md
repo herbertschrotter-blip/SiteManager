@@ -5,8 +5,10 @@
 ## 📘 Überblick
 
 **Modulname:** `Lib_Json.ps1`
-**Aktuelle Version:** `LIB_V1.4.0`
-**Zweck:** Universelle JSON-Verwaltung mit optionaler PathManager-Integration, konfigurierbarem Verhalten und automatischer Erstellung einer Standardkonfiguration.
+**Aktuelle Version:** `LIB_V1.4.1`
+**Zweck:** Universelle JSON-Verwaltung mit optionaler PathManager-Integration,
+konfigurierbarem Verhalten und automatischer Erstellung einer Standardkonfiguration.
++ Wird systemweit als einheitliche JSON-Schnittstelle durch ManifestGenerator und SystemScanner verwendet.
 
 ---
 
@@ -56,10 +58,9 @@ Die Datei wird automatisch neu angelegt.
 
 * Optional, über `EnableLogging` steuerbar.
 * Schreibt bei Aktivierung Einträge wie:
-
-  ```
   [2025-10-22 20:15:30] WRITE → D:\...\Json_Test.json
-  ```
++ Wird bei Systemaufrufen (z. B. ManifestGenerator, SystemScanner) automatisch erweitert,
++ um Modul- und Timestamp-Kontext hinzuzufügen (z. B. `[SystemScanner] WRITE → …`).
 
 ### 🔹 OneDrive-Kompatibilität
 
@@ -129,10 +130,24 @@ if (-not (Test-Path $defaultConfigPath)) {
 
 ### ⚙️ Verwendung durch SystemScanner
 
-Der **Lib_SystemScanner** nutzt diese Library als Standard-JSON-Handler,  
-um die System-Registry (`Module_Registry.json`) zu lesen und zu schreiben.  
-Dadurch ist sichergestellt, dass alle Framework-Komponenten dieselbe  
+### ⚙️ Verwendung durch SystemScanner
+
+Der **Lib_SystemScanner** nutzt diese Library als Standard-JSON-Handler,
+um die System-Registry (`Module_Registry.json`) zu lesen und zu schreiben.
+Dadurch ist sichergestellt, dass alle Framework-Komponenten dieselbe
 JSON-Formatierung, Kodierung und Fehlerbehandlung verwenden.
++ Zusätzlich wird sie vom **Lib_ManifestGenerator** für das Erstellen und Aktualisieren
++ von Manifestdateien genutzt. Beide Module greifen über dieselbe Config `Json_Config.json` zu,
++ wodurch identische Logik (Wartezeiten, Encoding, Tiefe) garantiert ist.
+
+---
+
+### 🔸 Framework-Integration (seit V1.4.1)
+
+* Wird vom **Lib_SystemScanner** für Registry-Operationen genutzt.
+* Wird vom **Lib_ManifestGenerator** zur Erstellung und Aktualisierung von Modul-Manifests (.psd1) verwendet.
+* Beide Komponenten verwenden die gleichen Konfigurationsparameter (`WaitTimeMs`, `DefaultDepth`, `EnableLogging`).
+* Dadurch bleibt die Datenstruktur und Formatierung aller JSON- und PSD1-Dateien im gesamten Framework konsistent.
 
 ---
 
@@ -155,6 +170,7 @@ JSON-Formatierung, Kodierung und Fehlerbehandlung verwenden.
 | 2025-10-22 | V1.2.0  | Warte-Loop für OneDrive implementiert                       |
 | 2025-10-22 | V1.3.0  | Konfigurationsdatei Json_Config.json integriert             |
 | 2025-10-23 | V1.4.0  | Auto-Erstellung der Standardkonfig + Merge mit UserConfig   |
+| 2025-10-23 | V1.4.1  | Dokumentation erweitert: Nutzung durch SystemScanner & ManifestGenerator |
 
 ---
 
