@@ -1,17 +1,17 @@
 # ============================================================
 # 🧩 Library: Lib_SystemScanner.ps1
-# Version: LIB_V1.1.0
+# Version: LIB_V1.2.0
 # Zweck:   Scannt alle Libraries & Module, liest ManifestHints aus,
-#          erstellt Registry und Logdatei (kein Manifest-Export)
+#          erstellt Registry & Log, inklusive Beziehungs- und Statistikdaten
 # Autor:   Herbert Schrotter
 # Datum:   22.10.2025
 # ============================================================
 # 🧩 ManifestHint:
 #   ExportFunctions: Invoke-SystemScan
 #   Description: Scannt alle Libraries und Module des SiteManagers,
-#                 liest ManifestHints aus und erstellt System-Registry & Log.
+#                 liest ManifestHints aus, erstellt Registry & Log inkl. Abhängigkeitsnetz.
 #   Category: Utility
-#   Tags: Scan, Registry, Manifest, Log, Framework
+#   Tags: Scan, Registry, Manifest, Log, Framework, Relations
 #   Dependencies: Lib_PathManager, Lib_Json
 # ============================================================
 
@@ -86,12 +86,10 @@ function Invoke-SystemScan {
             try {
                 $content = Get-Content -Path $file.FullName -ErrorAction Stop
 
-                # ManifestHint-Block suchen (Unicode-tolerant & variabel lang)
-                $hintIndex = ($content | Select-String -Pattern "#\s*ManifestHint" -SimpleMatch).LineNumber
-
+                # 🧩 ManifestHint-Block suchen (Unicode-tolerant & variabel lang)
+                $hintIndex = ($content | Select-String -Pattern "ManifestHint" -SimpleMatch).LineNumber
                 if ($hintIndex -and $hintIndex.Count -ge 1) {
                     $startLine = $hintIndex[0]
-                    # Alle folgenden Zeilen bis zu einer Trennlinie oder leerer Zeile lesen
                     $block = @()
                     for ($i = $startLine; $i -lt $content.Count; $i++) {
                         $line = $content[$i].Trim()
@@ -111,9 +109,7 @@ function Invoke-SystemScan {
                     $info.Status = "⚠️ Kein ManifestHint"
                 }
 
-                }
-
-                # Version aus Header lesen
+                # 🔍 Version aus Header lesen
                 $verLine = $content | Select-String -Pattern "Version:" | Select-Object -First 1
                 if ($verLine) {
                     $info.Version = ($verLine.ToString() -split "Version:")[1].Trim()
@@ -128,27 +124,62 @@ function Invoke-SystemScan {
         }
 
         # ------------------------------------------------------------
+        # 🧩 BEZIEHUNGEN (Dependencies <-> UsedBy)
+        # ------------------------------------------------------------
+        $registryData = @{}
+        foreach ($item in $scanResults) {
+            $registryData[$item.Name] = @{
+                Version         = $item.Version
+                Category        = $item.Category
+                Description     = $item.Description
+                ExportFunctions = $item.ExportFunctions
+                Dependencies    = $item.Dependencies
+                Tags            = $item.Tags
+                Status          = $item.Status
+                UsedBy          = @()
+            }
+        }
+
+        # UsedBy-Felder aufbauen
+        foreach ($key in $registryData.Keys) {
+            $deps = $registryData[$key].Dependencies
+            foreach ($dep in $deps) {
+                $depName = $dep.Trim()
+                if ($depName -and $registryData.ContainsKey($depName)) {
+                    $registryData[$depName].UsedBy += $key
+                }
+            }
+        }
+
+        # ------------------------------------------------------------
+        # 📊 STATISTIK-BLOCK
+        # ------------------------------------------------------------
+        $totalLibs  = ($registryData.Keys | Where-Object { $_ -like "Lib_*" }).Count
+        $totalMods  = ($registryData.Keys | Where-Object { $_ -like "Mod_*" }).Count
+        $totalCores = ($registryData.Keys | Where-Object { $_ -like "Start_*" -or $_ -like "Core_*" }).Count
+
+        $stats = [ordered]@{
+            "GesamtModule"     = $registryData.Count
+            "Libraries"        = $totalLibs
+            "Module"           = $totalMods
+            "CoreModule"       = $totalCores
+            "MitManifestHint"  = ($scanResults | Where-Object { $_.Status -eq 'OK' }).Count
+            "OhneManifestHint" = ($scanResults | Where-Object { $_.Status -match 'ManifestHint' }).Count
+            "Fehlerhafte"      = ($scanResults | Where-Object { $_.Status -match 'Fehler' }).Count
+            "LetzterScan"      = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        }
+
+        $registryData["__SystemInfo"] = $stats
+
+        # ------------------------------------------------------------
         # 💾 REGISTRY SCHREIBEN
         # ------------------------------------------------------------
         try {
-            $registryData = @{}
-            foreach ($item in $scanResults) {
-                $registryData[$item.Name] = @{
-                    Version         = $item.Version
-                    Category        = $item.Category
-                    Description     = $item.Description
-                    ExportFunctions = $item.ExportFunctions
-                    Dependencies    = $item.Dependencies
-                    Tags            = $item.Tags
-                    Status          = $item.Status
-                }
-            }
-
             if (Get-Command -Name Save-JsonFile -ErrorAction SilentlyContinue) {
                 Save-JsonFile -Path $registryPath -Data $registryData
             }
             else {
-                $registryData | ConvertTo-Json -Depth 5 | Out-File -FilePath $registryPath -Encoding utf8 -Force
+                $registryData | ConvertTo-Json -Depth 6 | Out-File -FilePath $registryPath -Encoding utf8 -Force
             }
 
             Write-Host "`n📄 Registry aktualisiert: $registryPath" -ForegroundColor Green
@@ -160,23 +191,23 @@ function Invoke-SystemScan {
         }
 
         # ------------------------------------------------------------
-        # 📊 ZUSAMMENFASSUNG
+        # 🧾 ZUSAMMENFASSUNG
         # ------------------------------------------------------------
-        $total     = $scanResults.Count
-        $withHint  = ($scanResults | Where-Object { $_.Status -eq 'OK' }).Count
-        $noHint    = ($scanResults | Where-Object { $_.Status -match 'ManifestHint' }).Count
-        $errors    = ($scanResults | Where-Object { $_.Status -match 'Fehler' }).Count
-
         Write-Host "`n📊 Scan-Zusammenfassung:" -ForegroundColor Cyan
         Write-Host "─────────────────────────────────────────────"
-        Write-Host ("Gesamtdateien     : {0}" -f $total)
-        Write-Host ("Mit ManifestHint  : {0}" -f $withHint)
-        Write-Host ("Ohne ManifestHint : {0}" -f $noHint)
-        Write-Host ("Fehlerhafte Dateien: {0}" -f $errors)
+        Write-Host ("Gesamtdateien     : {0}" -f $scanResults.Count)
+        Write-Host ("Mit ManifestHint  : {0}" -f $stats.MitManifestHint)
+        Write-Host ("Ohne ManifestHint : {0}" -f $stats.OhneManifestHint)
+        Write-Host ("Fehlerhafte Dateien: {0}" -f $stats.Fehlerhafte)
+        Write-Host "─────────────────────────────────────────────"
+        Write-Host ("Libraries         : {0}" -f $totalLibs)
+        Write-Host ("Module            : {0}" -f $totalMods)
+        Write-Host ("Core-Module       : {0}" -f $totalCores)
+        Write-Host ("Letzter Scan      : {0}" -f $stats.LetzterScan)
         Write-Host "─────────────────────────────────────────────"
         Write-Host "🪵 Log-Datei: $logPath" -ForegroundColor DarkGray
 
-        Add-Content -Path $logPath -Value "Scan abgeschlossen – $total Dateien, $withHint mit Hint, $errors Fehler."
+        Add-Content -Path $logPath -Value "Scan abgeschlossen – $($stats.GesamtModule) Module, $($stats.MitManifestHint) mit Hint, $($stats.Fehlerhafte) Fehler."
         Write-Host "`n✅ SystemScan abgeschlossen." -ForegroundColor Green
     }
     catch {
