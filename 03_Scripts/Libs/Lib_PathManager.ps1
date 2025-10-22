@@ -103,7 +103,7 @@ function Register-System {
         $root     = $pathMap.Root
 
         $defaultConfig = @{
-            Version        = "CFG_V1.1.0"
+            Version        = "CFG_V1.2.0"
             Ordnerstruktur = @{
                 Config    = "01_Config"
                 Templates = "02_Templates"
@@ -111,8 +111,7 @@ function Register-System {
                 Logs      = "04_Logs"
                 Backup    = "05_Backup"
             }
-            Systeme        = @()
-            StandardRoot   = $root
+            Systeme = @()
         }
 
         if (-not (Test-Path $configPath)) {
