@@ -1,4 +1,8 @@
 # 🏗️ SITE MANAGER – Projektübersicht
+> 🧩 **Framework-Version:** SM_V1.3.0  
+> 📦 **Aktuelle Core-Libs:** PathManager V1.2.4 · Json V1.4.1 · SystemScanner V1.3.2  
+> 🧠 **Registry:** 00_Info\Module_Registry.json (automatisch erstellt durch SystemScanner)
+
 
 > 🚀 **Hinweis:** Dies ist die Startversion der Projektübersicht. Das Dokument wird mit neuen Versionen des Site Managers kontinuierlich erweitert und aktualisiert.
 
@@ -36,11 +40,11 @@ Das Projekt **Site Manager** ist das zentrale PowerShell-Framework zur Verwaltun
 
 | Datei                | Zweck                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------- |
-| `Lib_Systeminfo.ps1` | Ermittelt Benutzername, Computername, Betriebssystem, Laufwerksstruktur usw.                |
-| `Lib_ListFiles.ps1`  | Liest und listet Dateien/Ordner aus; kann Strukturen als JSON speichern.                    |
-| `Lib_Debug.ps1`      | Debugging-, Logging- und Fehlerausgabefunktionen (mit `debugMode`).                         |
-| `Lib_Json.ps1`       | Lesen, Schreiben und Validieren von JSON-Dateien.                                           |
-| `Lib_Menu.ps1`       | Dynamische Menüsysteme für den Site Manager (mehrstufige Navigation, Rücksprung, Eingaben). |
+| `Lib_Json.ps1`            | JSON-Handler für alle Framework-Komponenten (Config, Registry, Manifeste).               |
+| `Lib_PathManager.ps1`     | Dynamische Pfadverwaltung, Multi-System-Erkennung, Unterordner-Erkennung (Get-PathSubDirs). |
+| `Lib_SystemScanner.ps1`   | Scannt Libraries & Module, erstellt Registry & Log, erkennt Abhängigkeiten.              |
+| `Lib_ManifestGenerator.ps1` | Erstellt & pflegt automatische Modul-Manifeste (.psd1) über Registry-Daten.             |
+
 
 > 💡 *Die Libs werden zu Beginn automatisch geladen.*
 
@@ -58,6 +62,16 @@ Das Projekt **Site Manager** ist das zentrale PowerShell-Framework zur Verwaltun
 | `Show-Logs.ps1`       | Anzeige und Filterung von Logdateien.                    |
 | `Dev-Tools.ps1`       | Entwicklerfunktionen: Testaufrufe, Debug-Modus, Analyse. |
 
+### 🧪 3a. Entwicklungs- und Testmodule
+
+| Modul                    | Zweck                                               |
+| --------------------------| --------------------------------------------------- |
+| `Test-LibJson.ps1`        | Testet Lese-, Schreib- und Fehlerfunktionen der JSON-Library. |
+| `Test-PathManager.ps1`    | Prüft Pfadermittlung, Systemerkennung und Unterordnerlogik.   |
+| `Test-SystemScanner.ps1`  | Führt kompletten Framework-Scan mit Registry-Erstellung durch. |
+| `Test-ManifestGenerator.ps1` | Erstellt und löscht Test-Manifeste, prüft Registry-Einträge. |
+
+
 ### 🧱 4. Konfigurationsdateien (Config)
 
 | Datei                   | Zweck                                                              |
@@ -65,6 +79,7 @@ Das Projekt **Site Manager** ist das zentrale PowerShell-Framework zur Verwaltun
 | `Parameter_Master.json` | Hauptparameter aller Baustellen (Projektliste, Pfade, Systeminfo). |
 | `System.json`           | Benutzer- und Rechnerbezogene Systemkonfiguration.                 |
 | `Defaults.json`         | Standardwerte für neue Projekte und Backups.                       |
+| `Module_Registry.json`  | Automatisch erstellte Systemübersicht aller Module und Libraries.  |
 
 ### 🗂️ 5. Geplante Ordnerstruktur
 
@@ -92,12 +107,17 @@ SiteManager\
 │   │   ├── System\
 │   │   ├── Project\
 │   │   └── Dev\
+│   │   └── Dev\
+│   │       ├── Test-LibJson.ps1
+│   │       ├── Test-PathManager.ps1
+│   │       ├── Test-SystemScanner.ps1
+│   │       └── Test-ManifestGenerator.ps1
 │   └── Libs\
-│       ├── Lib_Systeminfo.ps1
-│       ├── Lib_ListFiles.ps1
-│       ├── Lib_Debug.ps1
 │       ├── Lib_Json.ps1
-│       └── (weitere Libs)
+│       ├── Lib_PathManager.ps1
+│       ├── Lib_SystemScanner.ps1
+│       ├── Lib_ManifestGenerator.ps1
+│       └── Lib_Menu.ps1
 │
 ├── 04_Logs\
 │   ├── Fehler_Log.txt
@@ -118,6 +138,9 @@ SiteManager\
 | `README.md`          | Dokumentation des Projekts.                                   |
 | `Changelog.txt`      | Versionsverlauf und Änderungsnotizen.                         |
 | `Developer_Notes.md` | Technische Notizen, To-Dos, Erweiterungsideen.                |
+| `Module_Registry.json` | Zentrale Registry-Datei aller Module, Libraries & Versionen (automatisch generiert). |
+| `Lib_ManifestGenerator.ps1` | Erstellt Modul-Manifeste (.psd1) automatisch aus Registry-Daten. |
+
 
 ### 🧭 7. Menüstruktur (Lib_Menu)
 
@@ -151,6 +174,10 @@ SiteManager\
 * [ ] JSON-Validierung testen (`Lib_Json.ps1`)
 * [ ] Debug-Log-Format finalisieren
 * [ ] Erste Modultests (Add-Baustelle, Backup-Monitor)
+* [ ] Registry-Aktualisierung beim Start (`Lib_SystemScanner.ps1`)
+* [ ] Manifest-Erstellung über Registry (`Lib_ManifestGenerator.ps1`)
+* [ ] Developer_Notes automatisch mit Versionsstand abgleichen
+
 
 ---
 
@@ -283,6 +310,6 @@ git push origin v1.0.0
 
 ---
 
-🧩 **Stand:**  21.10.2025
-📁 **Version:** DOC_V1.0.0
+🧩 **Stand:**  22.10.2025
+📁 **Version:** DOC_V1.1.0
 ✍️ **Autor:** Herbert Schrotter
