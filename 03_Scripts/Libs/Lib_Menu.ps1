@@ -1,16 +1,16 @@
 # ============================================================
 # Library: Lib_Menu.ps1
-# Version: LIB_V1.5.2
-# Zweck:   Menüsystem mit Navigation, Logging, Stack-Verwaltung & PathManager-Unterstützung
+# Version: LIB_V1.6.0
+# Zweck:   Menüsystem mit Navigation, Stack-Verwaltung & zentralem Logging (Lib_Log)
 # Autor:   Herbert Schrotter
-# Datum:   22.10.2025
+# Datum:   23.10.2025
 # ============================================================
 # ManifestHint:
 #   ExportFunctions: Show-SubMenu, Write-MenuLog, Push-MenuStack, Pop-MenuStack, Get-CurrentMenuPath
-#   Description: Zentrale Menüsteuerung des Site Managers mit Logging, Rückkehrfunktion und Pfadanzeige.
+#   Description: Menüsystem für den Site Manager mit zentralem Logging über Lib_Log.ps1.
 #   Category: Core
-#   Tags: Menu, Logging, Framework, SiteManager
-#   Dependencies: Lib_PathManager.ps1
+#   Tags: Menu, Framework, SiteManager, Logging
+#   Dependencies: Lib_PathManager.ps1, Lib_Log.ps1
 # ============================================================
 
 
@@ -41,90 +41,78 @@ catch {
 }
 
 # ------------------------------------------------------------
-# 🔹 Parameterdatei prüfen oder neu anlegen
-# ------------------------------------------------------------
-$configPath = Join-Path $pathMap.Config "Menu_Config.json"
-if (-not (Test-Path $configPath)) {
-    Write-Host "Parameterdatei nicht gefunden. Erstelle Standard-Konfiguration ..." -ForegroundColor Yellow
-
-    $defaultConfig = @{
-        Version = "CFG_V1.0.0"
-        Menu    = @{
-            ShowPath          = $false
-            MaxLogFiles       = 10
-            LogFilePrefix     = "Menu_Log_"
-            LogDateFormat     = "yyyy-MM-dd_HHmm"
-            LogRetentionDays  = 30
-            ColorScheme       = @{
-                Title     = "White"
-                Highlight = "Cyan"
-                Error     = "Red"
-            }
-        }
-    }
-
-    $json = $defaultConfig | ConvertTo-Json -Depth 4
-    if (-not (Test-Path $pathMap.Config)) {
-        New-Item -Path $pathMap.Config -ItemType Directory -Force | Out-Null
-    }
-    $json | Out-File -FilePath $configPath -Encoding UTF8
-
-    Write-Host "Standard-Konfiguration erstellt unter: $configPath" -ForegroundColor Green
-}
-
-# ------------------------------------------------------------
-# 🔹 Parameterdatei laden
+# 🔹 Menü-Konfiguration laden (nur Anzeige & Verhalten)
 # ------------------------------------------------------------
 try {
-    $config = Get-Content $configPath -Raw | ConvertFrom-Json
-    $menuConfig = $config.Menu
+    $configPath = Join-Path $pathMap.Config "Menu_Config.json"
+
+    if (-not (Test-Path $configPath)) {
+        Write-Host "Menu_Config.json nicht gefunden – erstelle Standard-Konfiguration ..." -ForegroundColor Yellow
+
+        $defaultConfig = @{
+            Version = "CFG_V1.1.0"
+            Menu    = @{
+                ShowPath     = $false
+                ColorScheme  = @{
+                    Title     = "White"
+                    Highlight = "Cyan"
+                    Error     = "Red"
+                }
+            }
+        }
+
+        $defaultConfig | ConvertTo-Json -Depth 4 | Out-File -FilePath $configPath -Encoding UTF8
+        $menuConfig = $defaultConfig.Menu
+    }
+    else {
+        $config = Get-Content $configPath -Raw | ConvertFrom-Json
+        $menuConfig = $config.Menu
+        Write-Host "✅ Menu_Config.json geladen." -ForegroundColor Green
+    }
+
+    # Fallbacks falls Parameter fehlen
+    if (-not $menuConfig.ShowPath) { $menuConfig.ShowPath = $false }
+    if (-not $menuConfig.ColorScheme) {
+        $menuConfig.ColorScheme = @{
+            Title     = "White"
+            Highlight = "Cyan"
+            Error     = "Red"
+        }
+    }
 }
 catch {
-    Write-Host "Fehler beim Laden der Menu_Config.json: $($_.Exception.Message)" -ForegroundColor Red
-    $menuConfig = @{}
-}
-
-# Standardwerte (Fallback bei fehlenden Parametern)
-if (-not $menuConfig.MaxLogFiles) { $menuConfig.MaxLogFiles = 10 }
-if (-not $menuConfig.ShowPath) { $menuConfig.ShowPath = $false }
-if (-not $menuConfig.LogFilePrefix) { $menuConfig.LogFilePrefix = "Menu_Log_" }
-if (-not $menuConfig.LogDateFormat) { $menuConfig.LogDateFormat = "yyyy-MM-dd_HHmm" }
-if (-not $menuConfig.LogRetentionDays) { $menuConfig.LogRetentionDays = 30 }
-if (-not $menuConfig.ColorScheme) {
-    $menuConfig.ColorScheme = @{
-        Title     = "White"
-        Highlight = "Cyan"
-        Error     = "Red"
+    Write-Host "⚠️ Fehler beim Laden der Menu_Config.json: $_" -ForegroundColor Yellow
+    $menuConfig = @{
+        ShowPath = $false
+        ColorScheme = @{
+            Title     = "White"
+            Highlight = "Cyan"
+            Error     = "Red"
+        }
     }
 }
 
 # ------------------------------------------------------------
-# 🔹 Log-Initialisierung (mit Parametern aus Config)
+# 🔹 Zentrales Logging über Lib_Log.ps1
 # ------------------------------------------------------------
-$logDir = $pathMap.Logs
-if (-not (Test-Path $logDir)) { New-Item -Path $logDir -ItemType Directory -Force | Out-Null }
+try {
+    $libLog = "$PSScriptRoot\Lib_Log.ps1"
+    if (-not (Test-Path $libLog)) {
+        $libLog = "$PSScriptRoot\..\Libs\Lib_Log.ps1"
+    }
 
-$timestamp = (Get-Date).ToString($menuConfig.LogDateFormat)
-$global:MenuLogPath = Join-Path $logDir ("{0}{1}.txt" -f $menuConfig.LogFilePrefix, $timestamp)
-
-# Alte Logs bereinigen (max. Anzahl oder Alter)
-$logFiles = Get-ChildItem -Path $logDir -Filter "$($menuConfig.LogFilePrefix)*.txt" | Sort-Object LastWriteTime -Descending
-
-# Nur die letzten N behalten
-if ($logFiles.Count -gt $menuConfig.MaxLogFiles) {
-    $oldLogs = $logFiles | Select-Object -Skip $menuConfig.MaxLogFiles
-    foreach ($log in $oldLogs) {
-        try { Remove-Item $log.FullName -Force } catch {}
+    if (Test-Path $libLog) {
+        . $libLog
+        Load-LogConfig
+        Initialize-LogSession -ModuleName "MenuSystem"
+        Write-FrameworkLog -Module "MenuSystem" -Level INFO -Message "Menüsystem gestartet."
+    }
+    else {
+        Write-Host "⚠️ Lib_Log.ps1 nicht gefunden – Menülogging deaktiviert." -ForegroundColor Yellow
     }
 }
-
-# Optional: Alte Logs nach Tagen löschen
-if ($menuConfig.LogRetentionDays -gt 0) {
-    $cutoff = (Get-Date).AddDays(-$menuConfig.LogRetentionDays)
-    $expired = $logFiles | Where-Object { $_.LastWriteTime -lt $cutoff }
-    foreach ($log in $expired) {
-        try { Remove-Item $log.FullName -Force } catch {}
-    }
+catch {
+    Write-Host "⚠️ Fehler beim Laden von Lib_Log.ps1: $_" -ForegroundColor Yellow
 }
 
 # ------------------------------------------------------------
@@ -133,17 +121,7 @@ if ($menuConfig.LogRetentionDays -gt 0) {
 if (-not $global:MenuStack) { $global:MenuStack = @() }
 
 # ------------------------------------------------------------
-# 🔹 Sitzungsstart markieren (nur einmal pro Lauf)
-# ------------------------------------------------------------
-if (-not $global:MenuSessionStarted) {
-    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    $sessionHeader = "--------------------------------------------`n[{0}] Neue Menü-Session gestartet`n--------------------------------------------" -f $timestamp
-    Add-Content -Path $global:MenuLogPath -Value $sessionHeader
-    $global:MenuSessionStarted = $true
-}
-
-# ------------------------------------------------------------
-# 🔹 Hilfsfunktionen: Logging & Stack
+# 🔹 Logging-Wrapper & Stack-Funktionen
 # ------------------------------------------------------------
 function Write-MenuLog {
     param(
@@ -153,23 +131,25 @@ function Write-MenuLog {
     )
 
     try {
-        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        $logEntry = "[{0}] Menü: {1} | Auswahl: {2} | Aktion: {3}" -f $timestamp, $MenuTitle, $Selection, $Action
-        Add-Content -Path $global:MenuLogPath -Value $logEntry
+        $msg = "Menü: $MenuTitle | Auswahl: $Selection | Aktion: $Action"
+        Write-FrameworkLog -Module "MenuSystem" -Level INFO -Message $msg
     }
     catch {
-        Write-Host "Fehler beim Schreiben des Menülogs: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "❌ Fehler beim Menülogging: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
 function Push-MenuStack {
     param([string]$Title)
     $global:MenuStack += $Title
+    Write-FrameworkLog -Module "MenuSystem" -Level DEBUG -Message "Stack PUSH → $Title"
 }
 
 function Pop-MenuStack {
     if ($global:MenuStack.Count -gt 0) {
+        $removed = $global:MenuStack[-1]
         $global:MenuStack = $global:MenuStack[0..($global:MenuStack.Count - 2)]
+        Write-FrameworkLog -Module "MenuSystem" -Level DEBUG -Message "Stack POP ← $removed"
     }
 }
 
@@ -219,8 +199,9 @@ function Show-SubMenu {
 
         # Beenden
         if ($choice -match '^(x|X)$') {
+            Write-FrameworkLog -Module "MenuSystem" -Level INFO -Message "Programm beendet."
+            Close-LogSession -ModuleName "MenuSystem"
             Write-Host "`nProgramm wird beendet ..." -ForegroundColor Yellow
-            Write-MenuLog -MenuTitle $MenuTitle -Selection "X" -Action "Programm beendet"
             Start-Sleep -Seconds 1
             exit
         }
@@ -228,7 +209,7 @@ function Show-SubMenu {
         # Zurück
         if ($choice -match '^(b|B)$') {
             Pop-MenuStack
-            Write-MenuLog -MenuTitle $MenuTitle -Selection "B" -Action "Zurück"
+            Write-FrameworkLog -Module "MenuSystem" -Level INFO -Message "Zurück aus Menü: $MenuTitle"
             return "0"
         }
 
@@ -237,12 +218,12 @@ function Show-SubMenu {
             $action = $Options[$choice].Split('|')[1]
 
             try {
-                Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action $action
+                Write-FrameworkLog -Module "MenuSystem" -Level INFO -Message "Auswahl $choice → Aktion: $action"
                 Invoke-Expression $action
             }
             catch {
                 Write-Host "Fehler beim Ausführen von '$action': $($_.Exception.Message)" -ForegroundColor $menuConfig.ColorScheme.Error
-                Write-MenuLog -MenuTitle $MenuTitle -Selection $choice -Action "Fehler: $($_.Exception.Message)"
+                Write-FrameworkLog -Module "MenuSystem" -Level ERROR -Message "Fehler bei Auswahl $choice → $($_.Exception.Message)"
             }
 
             Pause
