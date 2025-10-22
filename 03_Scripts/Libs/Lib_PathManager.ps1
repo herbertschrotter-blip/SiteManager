@@ -1,15 +1,16 @@
 # ============================================================
-# Library: Lib_PathManager.ps1
-# Version: LIB_V1.2.3
-# Zweck:   Dynamischer Pfadmanager mit Multi-System-Erkennung und konfigurierbarer Ordnerstruktur
+# 🧩 Library: Lib_PathManager.ps1
+# Version: LIB_V1.2.4
+# Zweck:   Dynamischer Pfadmanager mit Multi-System-Erkennung,
+#          konfigurierbarer Ordnerstruktur und rekursiver Unterordner-Erkennung.
 # Autor:   Herbert Schrotter
 # Datum:   22.10.2025
 # ============================================================
-# ManifestHint:
-#   ExportFunctions: Get-ProjectRoot, Get-PathMap, Get-PathConfig, Get-PathLogs, Get-PathBackup, Get-PathTemplates, Register-System, Get-ActiveSystem
-#   Description: Erkennt Root, Systeme und liest dynamische Ordnerstruktur aus PathManager_Config.json
+# 🧩 ManifestHint:
+#   ExportFunctions: Get-ProjectRoot, Get-PathMap, Get-PathConfig, Get-PathLogs, Get-PathBackup, Get-PathTemplates, Register-System, Get-ActiveSystem, Get-PathSubDirs
+#   Description: Erkennt Projektstruktur, Systeme und liefert rekursiv alle Unterordner über Get-PathSubDirs.
 #   Category: Core
-#   Tags: Path, Root, Structure, Framework, MultiSystem, Dynamic
+#   Tags: Path, Root, Structure, Framework, MultiSystem, Dynamic, Recursive
 #   Dependencies: (none)
 # ============================================================
 
@@ -91,6 +92,45 @@ function Get-PathConfig    { (Get-PathMap).Config }
 function Get-PathLogs      { (Get-PathMap).Logs }
 function Get-PathBackup    { (Get-PathMap).Backup }
 function Get-PathTemplates { (Get-PathMap).Templates }
+
+# ------------------------------------------------------------
+# 🌲 Funktion: Get-PathSubDirs (neuer API-Endpunkt)
+# ------------------------------------------------------------
+function Get-PathSubDirs {
+    <#
+        .SYNOPSIS
+        Liefert alle Unterordner eines gegebenen Basispfades rekursiv.
+
+        .PARAMETER BasePath
+        Der Pfad, ab dem rekursiv gesucht werden soll (Standard: Scripts).
+
+        .OUTPUTS
+        Array von vollständigen Unterordnerpfaden.
+
+        .EXAMPLE
+        PS> Get-PathSubDirs -BasePath (Get-PathMap).Scripts
+    #>
+    param(
+        [string]$BasePath = (Get-PathMap).Scripts
+    )
+
+    try {
+        if (-not (Test-Path $BasePath)) {
+            throw "Pfad '$BasePath' nicht gefunden."
+        }
+
+        $dirs = Get-ChildItem -Path $BasePath -Directory -Recurse -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+
+        Write-Host "📁 $($dirs.Count) Unterordner gefunden unter: $BasePath" -ForegroundColor DarkGray
+        return $dirs
+    }
+    catch {
+        Write-Host "❌ Fehler in Get-PathSubDirs: $($_.Exception.Message)" -ForegroundColor Red
+        return @()
+    }
+}
+
 
 
 # ------------------------------------------------------------
